@@ -13,6 +13,15 @@ function M.response(npc,element,quantity)
     return packet(20,{{4,npc.id,4},{8,quantity+element*65536+0x40000000,4},{12,npc.index,2},{16,npc.zone,2},{18,npc.menu,2}});
 end
 function M.space(quantity) return math.ceil(math.floor(quantity/12)/12)+(quantity%12>0 and 1 or 0) end
+-- Check the eight stored balances; Retail uses the remaining event parameters.
+-- The menu ID belongs to this freshly requested NPC interaction, not one city.
+local function balance_menu(data)
+    if type(data)~='string' or #data<0x30 then return nil end
+    local menu=uint(data,0x2C,2);
+    if not menu or menu==0 then return nil end
+    for offset=8,22,2 do if uint(data,offset,2)>5000 then return nil end end
+    return menu;
+end
 local function totals(bag,element)
     local loose,clusters=0,0;
     for _,item in ipairs(bag.items) do
@@ -31,7 +40,6 @@ function M.new(env)
             or type(quantity)~='number' or quantity<1 or quantity>65535 or quantity~=math.floor(quantity) then return false end
         local npc,reason=env.target(true);
         if not npc then self.message=reason; return false end
-        if npc.zone~=234 then self.message='This first version supports the tested Bastok Mines Moogle only.'; return false end
         local bag=env.inventory();
         if not bag or bag.state~='Client snapshot' or bag.free<M.space(quantity) then self.message='Not enough verified free Inventory slots.'; return false end
         self.pending={stage='menu',npc=npc,element=element,quantity=quantity,deadline=env.now()+8};
@@ -46,15 +54,16 @@ function M.new(env)
         if not p or p.stage~='menu' or e.injected or e.blocked then return end
         if e.id~=0x032 and e.id~=0x033 and e.id~=0x034 then return end
         local function reject(reason) self.pending=nil; self.message=reason..' Use the normal NPC menu.' end
+        local menu=balance_menu(e.data);
         if e.id~=0x034 or uint(e.data,4,4)~=p.npc.id or uint(e.data,0x28,2)~=p.npc.index
-            or uint(e.data,0x2A,2)~=p.npc.zone or uint(e.data,0x2C,2)~=617 then reject('Unverified menu; no withdrawal sent.'); return end
+            or uint(e.data,0x2A,2)~=p.npc.zone or not menu then reject('Unverified menu; no withdrawal sent.'); return end
         if env.now()>=p.deadline or not same(env.target(false,p.npc),p.npc) then reject('Interaction changed; no withdrawal sent.'); return end
         local stored=uint(e.data,8+(p.element-1)*2,2);
         local bag=env.inventory();
         if not stored or stored<p.quantity or not bag or bag.state~='Client snapshot' or bag.free<M.space(p.quantity) then
             reject('Stored balance or Inventory space is insufficient.'); return;
         end
-        p.npc.menu=617; p.before_loose,p.before_clusters=totals(bag,p.element);
+        p.npc.menu=menu; p.before_loose,p.before_clusters=totals(bag,p.element);
         p.stage='confirm'; p.deadline=env.now()+10; p.next_check=env.now();
         -- Only this verified, requested menu is suppressed. Other menus remain native.
         e.blocked=true;

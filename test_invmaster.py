@@ -56,6 +56,7 @@ def addon_setup():
     lua.globals().crystal_source=(ROOT/'crystal_withdraw.lua').read_text()
     lua.globals().trace_source=(ROOT/'crystal_trace.lua').read_text()
     lua.globals().withdraw_source=(ROOT/'withdraw.lua').read_text()
+    lua.globals().prepare_source=(ROOT/'prepare_bridge.lua').read_text()
     lua.globals().currency_source=(ROOT/'currency.lua').read_text()
     lua.globals().custom_source=(ROOT/'customization.lua').read_text()
     lua.globals().ownership_source=(ROOT/'ownership_view.lua').read_text()
@@ -71,6 +72,7 @@ def addon_setup():
     package.preload.crystal_withdraw=function() return assert(loadstring(crystal_source))() end
     package.preload.crystal_trace=function() return assert(loadstring(trace_source))() end
     package.preload.withdraw=function() return assert(loadstring(withdraw_source))() end
+    package.preload.prepare_bridge=function() return assert(loadstring(prepare_source))() end
     package.preload.currency=function() return assert(loadstring(currency_source))() end
     package.preload.customization=function() return assert(loadstring(custom_source))() end
     package.preload.ownership_view=function() return assert(loadstring(ownership_source))() end
@@ -425,7 +427,7 @@ for q in [1,12,25]:
 for mutation in ["e.id=0x032", "e.data=wire(0x30)", "e.data='short'", "npc=nil", "now=9", "bag.free=0"]:
     l=crystal_setup(); run(l, "assert(cw:start(1,12)); local e=menu(); "+mutation+"; cw:observe(e); assert(not e.blocked and #crystal_sent==1 and not cw.pending)")
 l=crystal_setup(); run(l, "assert(cw:start(1,12)); local e=menu(11); cw:observe(e); assert(not e.blocked and #crystal_sent==1)")
-for mutation in ["npc=nil", "npc.zone=235", "bag.free=0", "bag.state='Updating'"]:
+for mutation in ["npc=nil", "bag.free=0", "bag.state='Updating'"]:
     l=crystal_setup(); run(l, mutation+"; assert(not cw:start(1,12)); assert(#crystal_sent==0)")
 l=crystal_setup(); run(l, "assert(cw:start(1,12)); local e=menu(); e.injected=true; cw:observe(e); assert(#crystal_sent==1 and not e.blocked); now=9; cw:tick(); assert(not cw.pending); e.injected=false; cw:observe(e); assert(#crystal_sent==1 and not e.blocked)")
 l=crystal_setup(); run(l, "assert(cw:start(1,12)); cw:manual_action({id=0x05B}); local e=menu(); cw:observe(e); assert(not e.blocked and #crystal_sent==1)")
@@ -484,5 +486,58 @@ l=addon_setup();run(l, "local m=require('bag_monitor'); local d=m.normalize(nil)
 l=addon_setup();run(l, "assert(cmd('/im monitor')); tick(0); assert(shown('Waiting for inventory')); tick(3); assert(shown('2/10 | 8 free') and not shown('Right-click an item')); click='Safe##Monitor1'; tick(4); assert(shown('1 matching slots | 1 items')); assert(#sent==0); cmd('/im'); tick(5); assert(shown('2/10 | 8 free')); zoning=1; tick(6); assert(not shown('2/10 | 8 free') and shown('Waiting for inventory'))")
 l=addon_setup();run(l, "cmd('/im monitor'); tick(0); tick(3); close_monitor=true; tick(4); assert(not current_profile.monitor.enabled and saves==2); tick(5); assert(#ui==0)")
 l=addon_setup();run(l, "current_profile.monitor.enabled=true; current_profile.monitor.bags['0']=false; switch_profile(current_profile); assert(current_profile.monitor.enabled and not current_profile.monitor.bags['0']); local bob={}; switch_profile(bob); assert(not bob.monitor.enabled and bob.monitor.bags['0']); assert(current_profile.monitor.enabled)")
+
+# Location-independent Moogle menus. Non-Bastok fixtures are protocol simulations,
+# not Retail captures; the final pair also exercises a two-byte zone/menu ID.
+for zone_id, menu_id in [(234,617),(235,617),(230,3549),(231,913),(231,914),(238,1098),(241,895),(241,896),(280,1234)]:
+    l=crystal_setup(); l.globals().test_zone=zone_id; l.globals().test_menu=menu_id
+    run(l, """
+    npc.zone=test_zone; npc.key='Alice:100:'..test_zone; key=npc.key
+    assert(cw:start(1,25));
+    local e={id=0x034,data=wire(0x30,{[4]={0x7D,0xA1,0x0E,1},[8]=190,
+      [0x28]={0x7D,1},[0x2A]={test_zone%256,math.floor(test_zone/256)},
+      [0x2C]={test_menu%256,math.floor(test_menu/256)}})}
+    cw:observe(e); assert(e.blocked and #crystal_sent==2)
+    local p=crystal_sent[2].data
+    assert(p[17]+p[18]*256==test_zone and p[19]+p[20]*256==test_menu)
+    assert(p[9]==25 and p[11]==1 and p[12]==64)
+    bag.items={{id=4096,count=1},{id=4104,count=2}}; now=1; cw:tick(); now=1.3; cw:tick()
+    assert(not cw.pending and changed==1 and #crystal_sent==2)
+    """)
+
+# Preserve real Retail event parameters from the successful Bastok capture.
+l=crystal_setup(); run(l, """
+assert(cw:start(1,12)); local e=menu()
+e.data=e.data:sub(1,24)..string.char(255,255,253,3,242,234,50,0,255,15,0,0,1,0,0,0)..e.data:sub(41)
+cw:observe(e); assert(e.blocked and #crystal_sent==2)
+""")
+for offset in [4,0x28,0x2A,0x2C]:
+    l=crystal_setup(); l.globals().bad_offset=offset
+    run(l, "assert(cw:start(1,12)); local e=menu(); e.data=e.data:sub(1,bad_offset)..string.char(0,0)..e.data:sub(bad_offset+3); cw:observe(e); assert(not e.blocked and #crystal_sent==1 and not cw.pending)")
+for offset in range(8,24,2):
+    l=crystal_setup(); l.globals().bad_offset=offset
+    run(l, "assert(cw:start(1,12)); local e=menu(); e.data=e.data:sub(1,bad_offset)..string.char(137,19)..e.data:sub(bad_offset+3); cw:observe(e); assert(not e.blocked and #crystal_sent==1 and not cw.pending)")
+l=crystal_setup(); run(l, "assert(cw:start(1,12)); local e=menu(); e.data=e.data:sub(1,46); cw:observe(e); assert(not e.blocked and #crystal_sent==1)")
+
+# Exercise the actual Currency popup outside Bastok, not only the controller.
+for zone_id, menu_id in [(234,617),(235,617),(230,3549),(231,913),(231,914),(238,1098),(241,895),(241,896),(280,1234)]:
+    l=addon_setup(); l.execute(PACKET_HELPERS)
+    l.globals().test_zone=zone_id; l.globals().test_menu=menu_id
+    run(l, """
+    zone=test_zone; npc_index=381; target_index=0; target_id=0x010EA17D
+    target_name='Ephemeral Moogle'; target_distance=9
+    cmd('/im'); tick(0); tick(3); active_tab='Currency'; currency_subtab='Crystals'
+    right_click='Water: --##Crystal6'; tick(4)
+    assert(shown('Water -> Inventory') and not shown('Bastok Mines Moogle only'))
+    edit_interval=4; tick(5); click='Withdraw crystals'; tick(6)
+    assert(#sent==1 and sent[1].id==0x01A and target_index==0)
+    local e={id=0x034,data=wire(0x30,{[4]={0x7D,0xA1,0x0E,1},[18]=81,
+      [0x28]={0x7D,1},[0x2A]={test_zone%256,math.floor(test_zone/256)},
+      [0x2C]={test_menu%256,math.floor(test_menu/256)}})}
+    callbacks.packet_in(e); assert(e.blocked and #sent==2 and sent[2].id==0x05B)
+    local p=sent[2].data
+    assert(p[9]==4 and p[11]==6 and p[12]==64)
+    assert(p[17]+p[18]*256==test_zone and p[19]+p[20]*256==test_menu)
+    """)
 
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

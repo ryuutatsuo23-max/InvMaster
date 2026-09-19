@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.13.0';
+addon.version = '0.14.0';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -48,7 +48,9 @@ local shami_controller;
 local withdraw_module=require 'withdraw';
 local withdrawer;
 local mover,sorter,sort_request;
-local function busy() return (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
+local preparer;
+local function other_busy() return (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
+local function busy() return other_busy() or (preparer and preparer:busy()) end
 local choice, destination;
 local quantity={1};
 local window, query = {false}, {''};
@@ -58,6 +60,7 @@ local selected, snapshot, last_read, next_read;
 local context_key;
 local status = 'Waiting for character data.';
 local function reset()
+    if preparer then preparer:cancel() end
     snapshot, last_read, selected, context_key = nil, nil, nil, nil;
     next_read = 0;
     choice, destination=nil, nil; quantity[1]=1;
@@ -204,6 +207,12 @@ local withdraw_env={
     changed=function() next_read=0; choice=nil; destination=nil end,
 };
 withdrawer=withdraw_module.new(withdraw_env);
+local prepare_env={}; for k,v in pairs(withdraw_env) do prepare_env[k]=v end
+prepare_env.wall=os.time; prepare_env.busy=other_busy;
+prepare_env.reply=function(token,code)
+    AshitaCore:GetChatManager():QueueCommand(-1,'/cm prepare_result '..token..' '..code);
+end;
+preparer=require('prepare_bridge').new(prepare_env);
 local withdraw_ui={
     available=function(id) local _,total=withdraw_module.sources(snapshot,id,withdraw_env); return total end,
     busy=busy,
@@ -396,6 +405,8 @@ local function render()
             if shami_controller.message then imgui.TextWrapped(shami_controller.message) end
             if crystal_withdrawer.message then imgui.TextWrapped(crystal_withdrawer.message) end
             if withdrawer.message then imgui.TextWrapped(withdrawer.message) end
+            if preparer.message then imgui.TextWrapped(preparer.message) end
+            if preparer.active and imgui.Button('Stop preparation') then preparer:cancel() end
             if withdrawer.active and imgui.Button('Stop withdrawal') then withdrawer:cancel() end
             if sorter.message then imgui.TextWrapped(sorter.message); end
             if imgui.BeginTabBar('MainTabs') then
@@ -454,6 +465,7 @@ ashita.events.register('packet_in', 'invmaster_access', function(e)
     bag_access:observe(e.id,e.data);
 end);
 ashita.events.register('packet_out','invmaster_crystal_trace',function(e)
+    if e.id==0x096 then preparer:cancel() end
     if not e.injected and not e.blocked then crystal_trace:observe('out',e.id,e.data) end
     if not e.injected and not e.blocked then shami_trace:observe('out',e.id,e.data) end
     crystal_withdrawer:manual_action(e);
@@ -466,7 +478,9 @@ ashita.events.register('command', 'invmaster_command', function(e)
     if cmd~='/im' and cmd~='/invmaster' and cmd~='/fms' then return end
     e.blocked=true;
     local action, text=rest:match('^(%S+)%s*(.*)$'); action=(action or 'ui'):lower();
-    if action == 'ui' then window[1]=not window[1];
+    if action == 'craftprepare' then preparer:request(text);
+    elseif action == 'craftcancel' then preparer:cancel(text);
+    elseif action == 'ui' then window[1]=not window[1];
     elseif action == 'monitor' and ready() then profile.monitor.enabled=not profile.monitor.enabled; settings.save();
     elseif action == 'find' then query[1]=text:sub(1,255); window[1]=true;
     elseif action == 'shamitrace' then
@@ -503,6 +517,7 @@ ashita.events.register('d3d_present', 'invmaster_present', function()
     mover:tick();
     sorter:tick();
     withdrawer:tick();
+    preparer:tick();
     crystal_withdrawer:tick();
     shami_controller:tick();
     if currency_refresh_due and not busy() and crystal_key() and os.clock()>=currency_next_request then

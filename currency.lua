@@ -33,7 +33,7 @@ local selected,quantity=nil,{1};
 local seal_selected,seal_quantity,orb_selected,confirm_orb=nil,{1},nil,nil;
 function M.reset() selected=nil; quantity[1]=1; seal_selected=nil; seal_quantity[1]=1; orb_selected=nil; confirm_orb=nil end
 function M.render(data,withdraw,exchange,refresh)
-    imgui.TextWrapped('Stored NPC balances. Use Refresh balances to request an update. Right-click a crystal to withdraw at the tested Bastok Mines Moogle. Right-click seals/crests for Shami withdrawals and orb exchanges.');
+    imgui.TextWrapped('Stored NPC balances. Use Refresh balances to request an update. Right-click a crystal to withdraw at a nearby Ephemeral Moogle. Right-click seals/crests for Shami withdrawals and orb exchanges.');
     if refresh then
         if imgui.Button('Refresh balances') then refresh.request() end
         local status=refresh.status(); if status then imgui.TextWrapped(status) end
@@ -112,7 +112,6 @@ function M.render(data,withdraw,exchange,refresh)
             imgui.Text(('%d cluster(s) + %d crystal(s)'):format(math.floor(quantity[1]/12),quantity[1]%12));
             local npc,reason=withdraw.target(true);
             if not npc then imgui.TextWrapped(reason)
-            elseif npc.zone~=234 then imgui.TextWrapped('This version supports the tested Bastok Mines Moogle only.')
             else
                 imgui.TextWrapped('The nearest Moogle within 6 yalms is selected automatically. Keep its menu closed. Fresh balances are checked before withdrawing.');
                 if imgui.Button('Withdraw crystals') then withdraw.start(selected,quantity[1]); imgui.CloseCurrentPopup() end

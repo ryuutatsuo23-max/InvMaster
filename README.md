@@ -1,11 +1,15 @@
-# InvMaster v0.13.0
+# InvMaster v0.14.0
 
 Item search, storage overview and individual transfers for Ashita v4, by DragoHorse.
 
 ## Install
 
-Copy `invmaster.lua`, `inventory_model.lua`, `transfer.lua`, `route_transfer.lua`, `stack_sort.lua`, `bag_access.lua`, `ownership_view.lua`, `item_categories.lua`, `category_data.lua`, `customization.lua`, `withdraw.lua`, `currency.lua`, `crystal_trace.lua`, `crystal_withdraw.lua`, `shami.lua`, `nearby_npc.lua`, `bag_monitor.lua` and the `third_party/` folder into `addons/invmaster/`.
+Copy `invmaster.lua`, `inventory_model.lua`, `transfer.lua`, `route_transfer.lua`, `stack_sort.lua`, `bag_access.lua`, `ownership_view.lua`, `item_categories.lua`, `category_data.lua`, `customization.lua`, `withdraw.lua`, `prepare_bridge.lua`, `currency.lua`, `crystal_trace.lua`, `crystal_withdraw.lua`, `shami.lua`, `nearby_npc.lua`, `bag_monitor.lua` and the `third_party/` folder into `addons/invmaster/`.
 Run `/addon load invmaster`, then `/im`.
+
+CraftMaster 0.4.0 and later can use **Prepare materials** to request missing recipe ingredients
+through InvMaster's existing transfer checks. See [the integration notes](docs/craftmaster-preparation.md).
+Preparation never starts crafting; existing saved settings and collections are preserved.
 
 ## Renaming from FindMyStuff
 
@@ -191,6 +195,13 @@ request. Zoning/profile changes clear runtime work without resending it.
 
 ## Validation
 
+Current v0.14.0 validation: **346 InvMaster offline scenarios** and **9 CraftMaster
+preparation integration tests** pass. LuaJIT syntax and Git whitespace checks pass.
+The user confirmed a withdrawal at another Ephemeral Moogle after the popup fix;
+the exact location was not recorded. This does not establish every Moogle's live
+compatibility. CraftMaster preparation still needs manual in-game validation.
+The notes below retain earlier validation history and its then-current limits.
+
 `python test_invmaster.py` requires Python and `lupa` with LuaJIT support.
 201 offline scenarios cover search, sorting, refresh intervals, partial reads,
 transfer validation, packet layout, confirmations, uncertain sends, timeouts,
@@ -239,18 +250,22 @@ state still blocks access. Home-storage and paid-wardrobe checks remain unchange
 
 ### Crystal withdrawals
 
-The first supported location is the Ephemeral Moogle in **Bastok Mines**, where
-manual responses were captured and confirmed. Stand within 6 yalms, with its normal menu closed; the nearest visible matching
+Withdrawals are location-independent for **Ephemeral Moogles** using the standard
+crystal balance menu. Bastok Mines and one additional, unspecified location are
+live-confirmed; remaining locations still need verification. Stand within 6 yalms,
+with its normal menu closed; the nearest visible matching
 NPC is detected automatically. No manual target selection is needed. In Currency > Crystals, right-click an element, enter
 crystal units and press **Withdraw crystals**. Multiples of twelve return as
 clusters; 25 units means two clusters plus one loose crystal.
 
-The addon requests a fresh NPC menu, checks identity, zone, menu, balance and
+The addon requests a fresh NPC menu, checks identity, zone, menu structure, balance and
 Inventory space, then sends one withdrawal response. It confirms received items
-through Inventory changes. No retries. Other locations are not yet enabled.
+through Inventory changes. The response uses the menu ID returned by that NPC,
+instead of a fixed Bastok menu ID. No retries. Unexpected menu layouts are rejected.
 Native menus stay untouched unless they match this exact requested interaction.
 After success, the last known balances stay visible while one refresh request
-fetches the updated totals. The automated interaction still needs a live test.
+fetches the updated totals. Bastok withdrawals are user-confirmed, including
+25 units returning two clusters and one loose crystal.
 
 For troubleshooting, `/im crystaltrace` arms a passive 60-second
 trace of an Ephemeral Moogle menu and its manual responses (maximum 12 packets).
@@ -287,8 +302,8 @@ For diagnostics, `/im shamitrace` records up to 12 matching menu packets over
 NPC actions detect the nearest visible matching NPC within 6 yalms. This does
 not change your selected target or trigger an action by proximity alone; press
 the withdrawal/exchange button as usual. Once started, the NPC identity is fixed
-and rechecked instead of switching to another NPC. The supported Moogle location
-remains Bastok Mines. Shami remains Port Jeuno.
+and rechecked instead of switching to another NPC. Ephemeral Moogle withdrawals
+are no longer restricted to Bastok Mines. Shami remains Port Jeuno.
 
 **Refresh balances** requests the same Currencies I data used by the game menu
 (outgoing 0x10F, incoming 0x113). Clicks are limited to one per five seconds.

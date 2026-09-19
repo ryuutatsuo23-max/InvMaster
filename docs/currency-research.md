@@ -79,3 +79,52 @@ header bytes through AddOutgoingPacket; existing incoming0x113 decoder supplies
 results. Five-second click cooldown, ten-second status timeout, no retries.
 Fresh character/zoning guard precedes send. Mocked checks cover these flows;
 auto-discovery and direct refresh still require live validation.
+
+## Location-independent Ephemeral Moogle withdrawals (2026-09-19)
+
+The earlier Bastok-only restriction is superseded in the source controller.
+Rechecked protocol reference:
+https://github.com/LandSandBoat/server/blob/base/scripts/globals/hobbies/crafting/ephemeral_moogle.lua
+Saved research copy: `.firecrawl/ephemeral-current.md`.
+The guild Moogles share balance packing and withdrawal encoding, but trigger
+menu IDs differ (617, 913, 914, 895, 896, 1098 and 3549). The reference leaves
+Mog Garden unimplemented; it does not establish that location's Retail menu ID.
+Only protocol facts were used; no reference implementation was copied.
+
+InvMaster now echoes the menu ID from the freshly requested matching NPC's
+0x034 response, rather than requiring zone 234/menu 617. It still requires the
+same nearby, visible Ephemeral Moogle, character context, NPC ID/index and zone.
+The packet must contain the full 0x30-byte menu, a nonzero menu ID and eight
+16-bit balances within the reference's 0-5000 storage limit. The selected balance
+and conservative Inventory space are rechecked before the single response.
+The remaining event parameters are not constrained: the actual successful
+Bastok captures contain nonzero Retail data where the reference uses zeros.
+
+Identity, request sequencing and structural checks identify the expected reply;
+structure alone is not proof that every possible event uses withdrawal semantics.
+Unexpected layouts fail closed, and no retry is sent. Native trade menus and
+other unusual interactions have not been live-tested with this change.
+
+337 offline scenarios pass, including different guild menu IDs, synthetic
+two-byte zone/menu values, original Retail event parameters, malformed balances,
+truncated menus and mismatched identities. The synthetic zone-280/menu-1234 case
+tests encoding only; it is not a verified Mog Garden menu mapping.
+Bastok's earlier live results remain the only supplied live withdrawal evidence.
+Other Ephemeral Moogles, including Mog Garden, require in-game verification.
+No installation or game actions were performed for this change.
+
+### Follow-up: Currency popup restriction
+
+The user's screenshot exposed a second zone-234 restriction in `currency.lua`:
+the popup hid the withdrawal button outside Bastok before reaching the updated
+controller. Removed that UI gate and updated its Bastok-only help text.
+Added nine popup-to-packet regression scenarios for different zone/menu pairs;
+the new test reproduced the blocked popup before the fix. All 346 scenarios now
+pass. The zone-280/menu-1234 fixture remains synthetic, not a live mapping.
+Installed the corrected UI module after backing up its previous installed copy;
+both Moogle-related modules were hash-verified against source. No game actions
+were sent by the tools; the user must reload and verify the withdrawal in game.
+
+The user subsequently confirmed the non-Bastok withdrawal works after reloading.
+The exact location was not supplied. Record this as one additional live-confirmed
+Moogle, not confirmation of all locations or Mog Garden.
