@@ -58,3 +58,8 @@ Withdrawals check fresh balances and Inventory space before proceeding.
 - Moogle withdrawals have worked in Bastok Mines and another location, but not every Moogle or Shami exchange has been tested in game. CraftMaster preparation still needs a live check.
 
 For development and troubleshooting, see [the technical notes](docs/).
+
+## License
+
+Copyright © 2026 **DragoHorse**. InvMaster's original code is licensed under
+[GNU GPL v3.0](LICENSE). Third-party data retains its [original attribution and license](third_party/categories.md).
