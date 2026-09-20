@@ -540,4 +540,31 @@ for zone_id, menu_id in [(234,617),(235,617),(230,3549),(231,913),(231,914),(238
     assert(p[17]+p[18]*256==test_zone and p[19]+p[20]*256==test_menu)
     """)
 
+# SDK ItemType.Plant (11) is not furniture: seeds can leave Satchel.
+for item_type in [11,10,12,14]:
+    l=transfer_setup(); l.globals().seed_type=item_type
+    run(l, """
+    resource_data[574]={Name={[1]='Fruit Seeds'},StackSize=12,Type=seed_type}
+    slots[5][39]={Id=574,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}
+    capacity[5]=80; counts[5]=1
+    local data=model.scan(inv,resources); local seed={bag=5}
+    for k,v in pairs(data[6].items[1]) do seed[k]=v end
+    local moves={}; local done=0
+    local mover=transfer.new({now=function() return now end,context=function() return owner end,
+      scan=function() return model.scan(inv,resources) end,equipped=function() return false end,
+      access=function() return {[0]=true,[5]=true} end,
+      changed=function() done=done+1 end,send=function(p) moves[#moves+1]=p end})
+    local category=require('item_categories').classify(seed)
+    if seed_type==11 then
+      assert(category~='furniture'); assert(mover:start(seed,0,1)); assert(#moves==1)
+      assert(moves[1][9]==5 and moves[1][10]==0 and moves[1][11]==39)
+      slots[0][3]=slots[5][39]; slots[5][39]=nil; counts[0]=3; counts[5]=0
+      now=1; mover:tick(); assert(mover.pending); now=1.3; mover:tick()
+      assert(not mover.pending and done==1 and #moves==1)
+    else
+      assert(category=='furniture'); assert(not mover:start(seed,0,1))
+      assert(#moves==0 and mover.message:find('Furniture'))
+    end
+    """)
+
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

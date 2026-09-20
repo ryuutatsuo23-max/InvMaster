@@ -24,7 +24,7 @@ function M.classify(item)
         end
         return item.item_type==4 and 'weapons' or 'equipment';
     end
-    if item.item_type==10 or item.item_type==11 or item.item_type==12 or item.item_type==14 then return 'furniture' end
+    if item.item_type==10 or item.item_type==12 or item.item_type==14 then return 'furniture' end
     return data[item.id] or 'other';
 end
 function M.normalize(value)

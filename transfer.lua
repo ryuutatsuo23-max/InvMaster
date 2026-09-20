@@ -76,7 +76,8 @@ function M.prepare(data, choice, destination, quantity, equipped, access)
     if not valid_number(item.stack_size,1,99) or not valid_number(item.item_type,0,65535) then
         return nil, 'Item resource data is unavailable.';
     end
-    if item.item_type==10 or item.item_type==11 or item.item_type==12 or item.item_type==14 then
+    -- Ashita ItemType 11 is Plant (seeds), not a furnishing.
+    if item.item_type==10 or item.item_type==12 or item.item_type==14 then
         return nil, 'Furniture transfers are not supported in this version.';
     end
     if equipped(choice.bag,choice.slot) then return nil, 'Unequip this item before moving it.' end
