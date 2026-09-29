@@ -98,7 +98,7 @@ def addon_setup():
     addon={}; ashita={events={register=function(e,_,cb) callbacks[e]=cb end}}
     GetPlayerEntity=function() return player end
     local mm={GetPlayer=function() return {GetIsZoning=function() return zoning end} end,
-      GetTarget=function() return {GetTargetIndex=function() return target_index or 0 end} end,
+      GetTarget=function() return {GetTargetIndex=function() return target_index or 0 end,GetMyroomCallback=function() if room_error then error('unavailable') end; return room_callback end} end,
       GetEntity=function() return {GetName=function(_,i) return i==(npc_index or target_index) and target_name or nil end,GetRenderFlags0=function() return target_flags or 0x200 end,GetDistance=function() return target_distance end,GetServerId=function() return target_id end,GetStatus=function() return player_status end,GetHPPercent=function() return hp end} end,
       GetParty=function() return {GetMemberTargetIndex=function() return 1 end,GetMemberZone=function() return zone end} end,
       GetInventory=function() return inv end}
@@ -806,13 +806,13 @@ l=addon_setup(); run(l, """
 cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={name='Copper Ore',destination=5}
 slots[5][1]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[5]=1
 cmd('/im refresh'); tick(3.5); active_tab='Organize'; org_subtab='Preview'
-click='View organization plan'; tick(4); assert(not shown('After all moves finish'))
-toggle_checkbox='Stack destination bags after this run'; tick(4.1); assert(shown('After all moves finish'))
-click='View organization plan'; tick(4.2); assert(not shown('After all moves finish'))
+click='View organization plan'; tick(4); assert(not shown('Combine partial stacks after moving'))
+toggle_checkbox='Stack destination bags after this run'; tick(4.1); assert(shown('Combine partial stacks after moving'))
+click='View organization plan'; tick(4.2); assert(not shown('Combine partial stacks after moving'))
 toggle_checkbox='Stack destination bags after this run'; tick(4.3); click='Run organization'; tick(4.4); tick(4.5)
-assert(#sent==1 and sent[1].id==0x029)
+assert(#sent==1 and sent[1].id==0x029 and shown('0 / 1 moves confirmed'))
 slots[5][2]=slots[0][2]; counts[5]=2; slots[0][2]=nil; counts[0]=1
-tick(5); tick(5.5); assert(#sent==2 and sent[2].id==0x03A and sent[2].data[5]==5)
+tick(5); tick(5.5); assert(#sent==2 and sent[2].id==0x03A and sent[2].data[5]==5 and shown('1 / 1 moves confirmed') and shown('Moves complete. Checking destination bags'))
 click='Stop organization'; tick(5.6); slots[5][1].Count=13; slots[5][2]=nil; counts[5]=1
 tick(6); tick(6.5); assert(#sent==2 and shown('Stopped by you') and saves==0)
 """)
@@ -1176,5 +1176,33 @@ l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); cmd('/im'); callbacks.unl
 l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); close_main=true; tick(4); callbacks.unload(); assert(current_profile.main_window_open==false); switch_profile(current_profile); tick(5); assert(#ui==0)")
 l=addon_setup(); run(l, "cmd('/im find ore'); tick(0); tick(3); callbacks.unload(); assert(current_profile.main_window_open); local alice=current_profile; local bob={}; settingsmock.name='Bob'; settingsmock.server_id=200; player={Name='Bob',ServerId=200}; switch_profile(bob); tick(4); assert(#ui==0 and alice.main_window_open and not bob.main_window_open)")
 l=addon_setup(); run(l, "cmd('/im'); player=nil; callbacks.unload(); assert(saves==0 and not current_profile.main_window_open)")
+
+# Diagnostics only read client data, including a missing residence API.
+l=addon_setup(); run(l, "local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/im status detail'); assert(table.concat(lines,' | '):find('Live residence %(diagnostic only%): unavailable') and #sent==0)")
+l=addon_setup(); run(l, "resource_data[102].Name[1]='Storage Slip 22'; cmd('/im'); tick(0); tick(3); local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/im status detail'); local text=table.concat(lines,' | '); assert(text:find('Storage Slip 22: Inventory slot=2 id=102') and text:find('extra_bytes=28') and #sent==0)")
+
+# Storage slips may report stack size zero, but still require exact identity.
+l=transfer_setup(); run(l, "resource_data[102].Type=27; resource_data[102].StackSize=0; slots[0][2].Count=1; chosen.count=1; assert(mover:start(chosen,6,1) and #sent==1); slots[0][2]=nil; counts[0]=1; slots[6][1]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep('x',28)}; counts[6]=1; now=1; mover:tick(); now=2; mover:tick(); assert(mover.pending); slots[6][1].Extra=chosen.extra; now=3; mover:tick(); now=3.25; mover:tick(); assert(not mover.pending and changed==1 and #sent==1)")
+for mutation in ["resource_data[102].Type=1", "resource_data[102].StackSize=nil", "resource_data[102].StackSize=-1", "slots[0][2].Count=2; chosen.count=2", "slots[0][2].Flags=5; chosen.flags=5", "slots[0][2].Extra='short'; chosen.extra='short'"]:
+    l=transfer_setup(); run(l, "resource_data[102].Type=27; resource_data[102].StackSize=0; slots[0][2].Count=1; chosen.count=1; "+mutation+"; assert(not mover:start(chosen,6,1) and #sent==0)")
+
+# Room probes remain read-only and tolerate SDK getters unavailable in a client.
+l=addon_setup(); run(l, "local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/im status room'); local text=table.concat(lines,' | '); assert(text:find('entity zone=unavailable') and text:find('Myroom callback %(read only%): unavailable') and text:find('no entity named Moogle') and #sent==0)")
+l=addon_setup(); run(l, "target_name='Moogle'; target_index=12; target_id=123; target_distance=9; local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/im status room'); assert(table.concat(lines,' | '):find('Moogle: index=12 id=123 squared distance=9 flags=512') and #sent==0)")
+l=addon_setup(); run(l, "zoning=1; local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/im status room'); assert(not table.concat(lines,' | '):find('Room diagnostic:') and #sent==0)")
+
+# Mog House reload recovery requires both the exit callback and live nearby Moogle.
+def home_access_setup():
+    l=storage_access_setup(235,'Moogle')
+    run(l, "room_callback=91906112; target_flags=1078985216; target_id=17739873; target_index=97")
+    return l
+l=home_access_setup(); run(l, "local s=access_status(); assert(s:find('Recorded: none') and s:find('Safe: access=true') and s:find('Storage: access=true') and s:find('Locker: access=true') and s:find('Safe 2: access=true') and #sent==0)")
+for mutation in ["room_callback=0", "room_callback=nil", "room_callback=-1", "room_callback=0/0", "room_callback=1.5", "room_callback=4294967296", "room_error=true", "target_name='Event Moogle'", "target_distance=37", "target_flags=0", "zoning=1", "player.Name='Other'"]:
+    l=home_access_setup(); run(l, mutation+"; assert(not access_status():find('Safe: access=true') and #sent==0)")
+l=home_access_setup(); run(l, "raw_secondary=0; local s=access_status(); assert(s:find('Safe: access=true') and s:find('Locker: access=false'))")
+l=home_access_setup(); run(l, "assert(access_status():find('Safe: access=true')); room_callback=0; assert(access_status():find('Safe: access=false') and #sent==0)")
+l=home_access_setup(); run(l, "inv.GetContainerCountMax=function(_,id) room_callback=0; return capacity[id] or 0 end; assert(access_status():find('Safe: access=false') and #sent==0)")
+l=home_access_setup(); run(l, "right_click='Copper Ore##1_1'; tick(4); click='Move item'; tick(4.1); assert(#sent==1)")
+l=home_access_setup(); run(l, "current_profile.organization.items['102']={keep=12,destination=4}; active_tab='Organize'; org_subtab='Preview'; click='View organization plan'; tick(4); click='Run organization'; tick(4.2); tick(4.3); assert(#sent==1); room_callback=0; tick(4.4); slots[0][3]=slots[1][1]; slots[1][1]=nil; counts[1]=0; counts[0]=3; tick(5); tick(5.5); tick(6); assert(#sent==1 and shown('reached Inventory'))")
 
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.20.11';
+addon.version = '0.20.15';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -38,7 +38,7 @@ local shami_trace=require('crystal_trace').new({
 local nearby_npc=require('nearby_npc').new({now=os.clock,read=function(index)
     local entity=AshitaCore:GetMemoryManager():GetEntity();
     local name=entity:GetName(index);
-    if name~='Shami' and name~='Ephemeral Moogle' and name~='Ephemeral_Moogle' and name~='Green Thumb Moogle' and name~='Green_Thumb_Moogle' and name~='Nomad Moogle' and name~='Nomad_Moogle' then return nil end
+    if name~='Moogle' and name~='Shami' and name~='Ephemeral Moogle' and name~='Ephemeral_Moogle' and name~='Green Thumb Moogle' and name~='Green_Thumb_Moogle' and name~='Nomad Moogle' and name~='Nomad_Moogle' then return nil end
     return {name=name,id=entity:GetServerId(index),distance=entity:GetDistance(index),flags=entity:GetRenderFlags0(index)};
 end});
 local currency=require 'currency';
@@ -201,13 +201,19 @@ shami_controller=require('shami').new({
 });
 local shami_ui={busy=busy,target=shami_target,
     start=function(mode,index,count) if not busy() then clear_action_messages(); shami_controller:start(mode,index,count) end end};
+local function storage_service()
+    local mm=AshitaCore:GetMemoryManager();
+    local ok,callback=pcall(function() return mm:GetTarget():GetMyroomCallback() end);
+    local name,kind=require('bag_access').storage_npc(mm:GetParty():GetMemberZone(0),ok and callback or nil);
+    return name,kind,callback;
+end
 local function current_access()
     local key=transfer_context();
     if not key then return {} end
     local ok,capacity=pcall(function() return AshitaCore:GetMemoryManager():GetInventory():GetContainerCountMax(5) end);
     local live_ok,live=pcall(function()
         local mm=AshitaCore:GetMemoryManager();
-        local name,kind=require('bag_access').storage_npc(mm:GetParty():GetMemberZone(0));
+        local name,kind,callback=storage_service();
         if not name or not nearby_npc:find(name,key) then return nil end
         local inv=mm:GetInventory(); local before=inv:GetContainerUpdateCounter();
         local evidence={key=key,kind=kind,capacities={}};
@@ -217,6 +223,7 @@ local function current_access()
         local raw_ok,secondary=pcall(function() return inv:GetRawStructure().ContainerMaxCapacity2[5] end);
         if raw_ok then evidence.locker_secondary=secondary end
         if type(before)~='number' or before~=inv:GetContainerUpdateCounter() or transfer_context()~=key then return nil end
+        if kind=='home' and mm:GetTarget():GetMyroomCallback()~=callback then return nil end
         return evidence;
     end);
     return bag_access:allowed(key,ok and capacity or nil,live_ok and live or nil);
@@ -507,6 +514,15 @@ local function render()
             if crystal_depositor.pending and crystal_depositor.pending.stage=='balance' and imgui.Button('Cancel deposit before trade') then crystal_depositor:cancel() end
             action_message('collection withdrawal',withdrawer,withdrawer.active or withdrawer.pending);
             action_message('preparation',preparer,preparer:busy());
+            if organizer.active then
+                local p=organizer.active; local total=#p.moves;
+                imgui.Separator();
+                imgui.TextColored({0.35,1.0,0.45,1.0},p.cancelled and 'Organization stopping' or 'Organization progress');
+                imgui.ProgressBar(total>0 and p.done/total or 0,{-1,20},('%d / %d moves confirmed'):format(p.done,total));
+                if p.done==total and p.stack_bags then
+                    imgui.TextWrapped(('Moves complete. Checking destination bags for stacking: %d / %d.'):format(math.min(p.stack_index-1,#p.stack_bags),#p.stack_bags));
+                else imgui.TextWrapped('Progress advances after the item reaches its final destination.') end
+            end
             action_message('organization',organizer,organizer:busy());
             if organizer:busy() and imgui.Button('Stop organization') then organizer:cancel('Stopped by you. No further moves sent.') end
             if preparer.active and imgui.Button('Stop preparation') then preparer:cancel() end
@@ -545,7 +561,7 @@ local function render()
                     imgui.Separator(); imgui.Text('InvMaster ' .. addon.version .. ' | DragoHorse');
                     imgui.TextWrapped('/im - toggle window. /im find <name> - search. /im refresh - request a fresh snapshot. /im status - access diagnostics.');
                     imgui.TextWrapped('Storage-to-storage transfers use Inventory as an intermediate step. If the second step cannot proceed, items remain in Inventory. Stack bag combines partial stacks using the game sort request. No automatic retries.');
-                    imgui.TextWrapped('Satchel, Sack and Case work without Mog House entry. Home access is learned on entry. Within 6 yalms of Green Thumb Moogle (Mog Garden) or supported Nomad Moogles, live bag capacities can recover access after reload. Nomads exclude Storage. Wardrobes accept equipment only. Temporary and Recycle are not supported.');
+                    imgui.TextWrapped('Satchel, Sack and Case work without Mog House entry. Home access is learned on entry. After reload, stand within 6 yalms of your Mog House Moogle, Green Thumb Moogle, or a supported Nomad Moogle. Mog House recovery also requires the live room indicator. Nomads exclude Storage. Wardrobes accept equipment only. Temporary and Recycle are not supported.');
                     imgui.TextWrapped('Slot rows stay separate, including items with the same name. Augments are not decoded in this version. NPC storage, delivery boxes and storage-slip contents are not included.');
                     imgui.EndTabItem();
                 end
@@ -628,11 +644,51 @@ ashita.events.register('command', 'invmaster_command', function(e)
         print('[InvMaster] Current: ' .. (key or reason));
         print('[InvMaster] Recorded: ' .. (bag_access.key or 'none') .. ' | Mog House: ' .. tostring(bag_access.home) .. ' | Entry flag: ' .. tostring(bag_access.home_byte));
         print('[InvMaster] Capacity update: ' .. (bag_access.sizes and 'received' or 'missing') .. ' | Wardrobe flags: ' .. tostring(bag_access.paid));
-        local npc_name=require('bag_access').storage_npc(AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0));
+        local npc_name=storage_service();
         local nearby=key and npc_name and nearby_npc:find(npc_name,key,nil,true);
         print('[InvMaster] Storage Moogle: '..(nearby and npc_name..' within 6 yalms' or 'none verified nearby'));
         local raw_ok,secondary=pcall(function() return AshitaCore:GetMemoryManager():GetInventory():GetRawStructure().ContainerMaxCapacity2[5] end);
         print('[InvMaster] Live Locker secondary capacity: '..tostring(raw_ok and secondary or 'unavailable'));
+        if text=='room' and key then
+            -- Diagnostics only: read documented SDK getters, never invoke callbacks.
+            local mm=AshitaCore:GetMemoryManager();
+            local function value(read)
+                local ok,v=pcall(read); return ok and v~=nil and tostring(v) or 'unavailable';
+            end
+            local index=mm:GetParty():GetMemberTargetIndex(0);
+            print('[InvMaster] Room diagnostic: player index='..tostring(index)
+                ..' entity zone='..value(function() return mm:GetEntity():GetZoneId(index) end)
+                ..' party zone2='..value(function() return mm:GetParty():GetMemberZone2(0) end));
+            print('[InvMaster] Myroom callback (read only): '..value(function() return mm:GetTarget():GetMyroomCallback() end));
+            local found=0;
+            for i=1,0x8FF do
+                local ok,name=pcall(function() return mm:GetEntity():GetName(i) end);
+                if ok and name=='Moogle' then
+                    found=found+1;
+                    print('[InvMaster] Moogle: index='..i
+                        ..' id='..value(function() return mm:GetEntity():GetServerId(i) end)
+                        ..' squared distance='..value(function() return mm:GetEntity():GetDistance(i) end)
+                        ..' flags='..value(function() return mm:GetEntity():GetRenderFlags0(i) end));
+                    if found>=10 then break end
+                end
+            end
+            if found==0 then print('[InvMaster] Room diagnostic: no entity named Moogle found.') end
+        end
+        if text=='detail' and key then
+            local residence_ok,residence=pcall(function() return AshitaCore:GetMemoryManager():GetPlayer():GetResidence() end);
+            print('[InvMaster] Live residence (diagnostic only): '..tostring(residence_ok and residence or 'unavailable'));
+            local data=model.scan(AshitaCore:GetMemoryManager():GetInventory(),AshitaCore:GetResourceManager());
+            local found=false;
+            for _,bag in ipairs(data or {}) do
+                for _,item in ipairs(bag.items or {}) do
+                    if model.matches(item,'Storage Slip 22') then
+                        found=true;
+                        print(('[InvMaster] %s: %s slot=%s id=%s count=%s flags=%s price=%s extra_bytes=%s stack_size=%s type=%s'):format(item.name,bag.name,tostring(item.slot),tostring(item.id),tostring(item.count),tostring(item.flags),tostring(item.price),type(item.extra)=='string' and #item.extra or 'unavailable',tostring(item.stack_size),tostring(item.item_type)));
+                    end
+                end
+            end
+            if not found then print('[InvMaster] Storage Slip 22: not found in readable bags.') end
+        end
         if text=='raw' then
             local inv=AshitaCore:GetMemoryManager():GetInventory();
             for _,field in ipairs({'ContainerMaxCapacity','ContainerMaxCapacity2'}) do

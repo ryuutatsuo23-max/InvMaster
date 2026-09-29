@@ -12,7 +12,7 @@ function M.route(data,choice,destination,access)
         return false, 'Move between Inventory and one storage container.';
     end
     if access[choice.bag]~=true or access[destination]~=true then
-        return false, 'Container access is unavailable. Move near a supported storage Moogle or enter your Mog House.';
+        return false, 'Container access is unavailable. Stand near a supported storage Moogle. In a Mog House, leave and re-enter after loading the addon.';
     end
     local source,target=data and data[choice.bag+1],data and data[destination+1];
     if not source or not target or source.state~='Client snapshot' or target.state~='Client snapshot' then
@@ -70,10 +70,17 @@ function M.prepare(data, choice, destination, quantity, equipped, access)
     local fresh={bag=choice.bag,resource_flags=item.resource_flags};
     allowed,reason=M.route(data,fresh,destination,access);
     if not allowed then return nil,reason end
-    if type(item.extra)~='string' or #item.extra~=28 or item.flags~=0 or item.price~=0 or item.id==65535 then
-        return nil, 'Item is locked, in use, or its identity data is unavailable.';
+    if type(item.extra)~='string' or #item.extra~=28 or item.id==65535 then
+        return nil, 'Item identity data is incomplete. Refresh and preview again.';
     end
-    if not valid_number(item.stack_size,1,99) or not valid_number(item.item_type,0,65535) then
+    if item.flags~=0 or item.price~=0 then
+        return nil, 'Item is locked or in use, or its usage status is unavailable.';
+    end
+    local stack_size=item.stack_size;
+    -- Retail storage slips (SDK ItemType.StorageSlip = 27) report zero stack size.
+    -- Accept only a single slip; preserve its extra data for exact confirmation.
+    if item.item_type==27 and stack_size==0 and item.count==1 then stack_size=1 end
+    if not valid_number(stack_size,1,99) or not valid_number(item.item_type,0,65535) then
         return nil, 'Item resource data is unavailable.';
     end
     -- Ashita ItemType 11 is Plant (seeds), not a furnishing.
@@ -81,7 +88,7 @@ function M.prepare(data, choice, destination, quantity, equipped, access)
         return nil, 'Furniture transfers are not supported in this version.';
     end
     if equipped(choice.bag,choice.slot) then return nil, 'Unequip this item before moving it.' end
-    if not valid_number(quantity,1,item.count) or quantity>item.stack_size then return nil, 'Choose a valid quantity from this slot.' end
+    if not valid_number(quantity,1,item.count) or quantity>stack_size then return nil, 'Choose a valid quantity from this slot.' end
     -- Require a spare slot even if merging might work, until stack handling is live-tested.
     if not target.free or target.free<1 then return nil, 'Destination needs at least one free slot.' end
     return {source=choice.bag,destination=destination,slot=choice.slot,item=item,quantity=quantity,

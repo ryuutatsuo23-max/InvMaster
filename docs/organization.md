@@ -99,9 +99,9 @@ No saved user data is migrated or discarded.
 ## Validation
 
 The large-plan preview was visually confirmed live on 2026-09-29: 26 moves
-using 49 steps in this run, with nine moves deferred. Completion across separate
-runs remains offline-tested and awaits live confirmation. The subsequent green
-and amber section headings were also visually confirmed by the user.
+using 49 steps in this run, with nine moves deferred. On 2026-09-30 the user
+clarified that completion across separate runs had also been tested successfully.
+The subsequent green and amber section headings were visually confirmed too.
 
 `python -B test_invmaster.py` covers the planner and mocked UI in addition to the
 existing regression suite. Checks include precedence, protection, keep quantities,
@@ -133,3 +133,12 @@ live; the accompanying screenshot reports 3/3 organization moves confirmed.
 OddOrg's public README was used as a feature reference only:
 https://github.com/FFXIOddone/OddOrg
 The rules, planner and UI were implemented independently in InvMaster's architecture.
+
+The active organization bar counts fully confirmed moves in the current run.
+A two-leg route advances only after reaching its final destination. Optional
+stacking is reported separately after the move bar fills. Skipped-item notices
+are grouped by identical text for display only; the reviewed plan is unchanged.
+
+On 2026-09-30 the user confirmed the progress UI looked good. Screenshots show
+1/6 and 4/6 confirmed moves, then a completed 6/6 run after Mog House reload.
+The reviewed plan included Storage Slip 22 from Satchel to Safe 2 via Inventory.

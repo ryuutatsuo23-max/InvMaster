@@ -34,7 +34,7 @@ function M.new()
         local access_key=table.concat(access,':');
         if self.access_key~=access_key or not env.ready then self:invalidate() end
         self.access_key=access_key;
-        imgui.TextWrapped('Review a plan, then explicitly run it. Rules are saved per character and apply to all copies of an item ID, including different augments.');
+        imgui.TextWrapped('Rules save per character and apply to every copy of an item, including different augments.');
         if not imgui.BeginTabBar('OrganizationTabs') then return end
         if imgui.BeginTabItem('Item rules') then
         imgui.SetNextItemWidth(-1);
@@ -106,7 +106,7 @@ function M.new()
             local p=self.preview;
             imgui.Text(('Proposed moves: %d | Notices: %d | Protected item types: %d'):format(#p.moves,#p.blocked,p.protected));
             local summary=rules.run_summary(p);
-            imgui.TextWrapped('Only moves under This run will execute. Notices are skipped. Stop prevents further sends; a sent move still needs confirmation. No retries.');
+            imgui.TextWrapped('Only This run will execute. Skipped items stay in place. Stop prevents further sends; sent moves still need confirmation. No retries.');
             imgui.Text(('%d / 50 transfer steps this run (routes via Inventory use two).'):format(summary.steps));
             if summary.deferred>0 then
                 imgui.Text(('Moves this run: %d | Deferred: %d | Runs in this preview: %d'):format(summary.count,summary.deferred,summary.runs));
@@ -115,7 +115,7 @@ function M.new()
             if #p.moves>0 then
                 imgui.Checkbox('Stack destination bags after this run',self.stack_after);
                 if self.stack_after[1] then
-                    imgui.TextWrapped('After all moves finish, combine partial stacks in destination bags, one bag at a time. Bags containing untouched items are skipped. Stop cancels remaining stacking.');
+                    imgui.TextWrapped('Combine partial stacks after moving. Bags with untouched items are skipped; Stop cancels remaining stacking.');
                 end
             end
             if #p.moves>0 and env.ready and env.run and imgui.Button('Run organization') then env.run(p,self.stack_after[1]) end
@@ -135,10 +135,21 @@ function M.new()
                     end
                     imgui.TextWrapped(('%d x %s: %s (slot %d) -> %s%s'):format(move.count,move.name,bags[move.source],move.slot,bags[move.destination],move.via_inventory and ' via Inventory' or ''));
                 end
-                for _,reason in ipairs(p.blocked) do
-                    imgui.TextColored({1.0,0.35,0.35,1.0},'Notice:');
-                    imgui.SameLine();
-                    imgui.TextWrapped(reason);
+                if #p.blocked>0 then
+                    imgui.Separator();
+                    imgui.TextColored({1.0,0.75,0.3,1.0},('Skipped items | Notices: %d'):format(#p.blocked));
+                    imgui.TextWrapped('These items are not included in this run. Repeated notices are grouped below.');
+                    imgui.Separator();
+                    local order,counts={},{};
+                    for _,reason in ipairs(p.blocked) do
+                        if not counts[reason] then order[#order+1]=reason; counts[reason]=0 end
+                        counts[reason]=counts[reason]+1;
+                    end
+                    for _,reason in ipairs(order) do
+                        imgui.TextColored({1.0,0.75,0.3,1.0},'Notice:');
+                        imgui.SameLine();
+                        imgui.TextWrapped(reason..(counts[reason]>1 and (' (%d occurrences)'):format(counts[reason]) or ''));
+                    end
                 end
             end
             imgui.EndChild();

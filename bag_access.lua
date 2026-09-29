@@ -1,9 +1,12 @@
 -- Passive server updates plus checked SDK capacities near storage-service NPCs.
 local M = {};
 local nomad_zones={[26]=true,[53]=true,[247]=true,[248]=true,[249]=true,[250]=true,[252]=true};
-function M.storage_npc(zone)
+function M.storage_npc(zone,room_callback)
     if zone==280 then return 'Green Thumb Moogle','garden' end
     if nomad_zones[zone] then return 'Nomad Moogle','nomad' end
+    -- Observed nonzero indoors and zero outdoors; also require a live Moogle.
+    if type(room_callback)=='number' and room_callback>0 and room_callback<=4294967295
+        and room_callback==math.floor(room_callback) then return 'Moogle','home' end
 end
 local function capacity(n,max)
     return type(n)=='number' and n>=1 and n<=max and n==math.floor(n);
@@ -49,10 +52,10 @@ function M.new()
             and satchel_capacity<=80 and satchel_capacity==math.floor(satchel_capacity);
         -- This evidence is rebuilt from the live client; never saved across reloads.
         local function recovered()
-            if key and nearby and nearby.key==key and type(nearby.capacities)=='table' and (nearby.kind=='garden' or nearby.kind=='nomad') then
+            if key and nearby and nearby.key==key and type(nearby.capacities)=='table' and (nearby.kind=='garden' or nearby.kind=='nomad' or nearby.kind=='home') then
                 for _,id in ipairs({1,2,4,9}) do
                     local usable=capacity(nearby.capacities[id],80);
-                    if id==2 and nearby.kind~='garden' then usable=false end
+                    if id==2 and nearby.kind=='nomad' then usable=false end
                     if id==4 then usable=usable and capacity(nearby.locker_secondary,81) end
                     -- A current server report of a disabled bag takes precedence.
                     if self.key==key and self.sizes and (not self.sizes[id] or self.sizes[id]<=0) then usable=false end

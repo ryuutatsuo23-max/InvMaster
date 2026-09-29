@@ -88,7 +88,7 @@ See [deposit details](docs/crystal-deposits.md).
 ## Notes
 
 - Only your current character's readable bags are searched. Other characters, delivery boxes and storage slips are not included.
-- In Mog Garden, stand within 6 yalms of **Green Thumb Moogle** to recover bag access after loading. Supported **Nomad Moogles** in Rabao, Selbina, Mhaura, Kazham, Norg, Tavnazian Safehold and Nashmau provide Safe/Safe 2 and available Locker access, but not Storage. Keep the NPC menu closed. Ordinary Mog Houses still require entry after loading.
+- In Mog Garden, stand within 6 yalms of **Green Thumb Moogle** to recover bag access after loading. Supported **Nomad Moogles** in Rabao, Selbina, Mhaura, Kazham, Norg, Tavnazian Safehold and Nashmau provide Safe/Safe 2 and available Locker access, but not Storage. Keep the NPC menu closed. After reload in an ordinary Mog House, stand within 6 yalms of its Moogle; recovery also requires the live room-exit indicator.
 - Stay idle while moving items. Do not manually rearrange bags or run another inventory mover during a transfer.
 - Hiding the window does not cancel an action. If a move cannot be confirmed, check your bags before reloading; InvMaster does not retry it automatically.
 - Moogle withdrawals have worked in Bastok Mines and another location, but not every Moogle or Shami exchange has been tested in game. CraftMaster preparation still needs a live check.

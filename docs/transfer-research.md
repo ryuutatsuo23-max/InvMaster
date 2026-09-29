@@ -210,3 +210,61 @@ during stacking to protect untouched items. This follows the Mhaura discovery
 fix; the success screenshot itself does not display a zone ID or individual
 transfer endpoints. It confirms a completed Nomad organization run, not every
 bag or every supported location. Other Nomad locations remain unverified live.
+
+### Mog House reload and Storage Slip diagnostic (v0.20.12)
+
+The user reported unavailable access after reloading inside a Mog House in
+zone 235; the screenshot shows no recorded zone entry. This is the remaining
+ordinary-residence limitation, not a regression of Nomad recovery. No generic
+Moogle access bypass is added. `/im status detail` reads the SDK residence value
+and Storage Slip 22 slot metadata without sending requests or exposing extra
+data contents. The residence value is diagnostic only until its semantics are
+verified. The screenshot shows an access notice for Storage Slip 22; the earlier
+reported unknown-identity notice has not been reproduced. Item identity and
+locked/in-use warnings now distinguish these different validation failures.
+
+### Storage Slip 22 resource evidence (v0.20.13)
+
+Live diagnostics show item 29333, type 27, count 1, flags and price zero,
+28 identity bytes, and stack size zero. The installed SDK enums identify 27 as
+StorageSlip. Transfer validation now treats exactly this type/count/zero-size
+combination as a single non-stackable item. Missing or malformed sizes for other
+items remain blocked. Confirmation still requires matching extra data; the raw
+resource value is preserved in snapshots. Offline tests cover exact identity
+confirmation and malformed/locked cases; live movement remains pending.
+The same capture reports residence 1 inside the Mog House after reload. An
+outside comparison is still needed before using that value to authorize access.
+
+### Residence comparison and room probe (v0.20.14)
+
+The user confirmed residence remains 1 outside and away from all Moogles.
+It is not an inside/outside discriminator and is excluded from access decisions.
+The SDK documents `ITarget:GetMyroomCallback` as the exit-door callback and
+`IEntity:GetZoneId` as a local-player field set under certain conditions. Neither
+is currently accepted as access evidence. `/im status room` reads these values,
+party Zone2, and bounded exact-name Moogle identity entries while context is
+ready. It never invokes callbacks or changes access. Client comparison pending.
+
+### Combined Mog House recovery (v0.20.15)
+
+Inside: local entity zone 0, party Zone2 0, room callback 91906112, Moogle
+index 97 / ID 17739873 at squared distance 2.25 with flags 1078985216.
+Outside: callback 0 and no entity named Moogle. Residence stays 1 in both.
+The fallback now requires a positive integer room callback and an exact-name,
+rendered Moogle within six yalms, plus the existing idle character context,
+stable inventory update counter, bag capacities and Locker secondary capacity.
+It rereads the callback before accepting capacities. It does not invoke the
+callback or persist access. Nomad and Garden paths remain unchanged.
+Offline tests cover missing/invalid callback, absent/distant/hidden Moogle,
+context changes, disabled Locker, callback changes during reads, and loss of
+the indicator during a routed move. Live reload-and-transfer verification is
+pending; other residences and floors have not yet been tested.
+
+### Live recovery and slip transfer confirmed (2026-09-30)
+
+After reloading v0.20.15 inside the Mog House in zone 235, the user showed no
+recorded zone entry, a verified nearby Moogle, and Safe, Storage, Locker and
+Safe 2 all accessible. The reviewed six-move plan included Storage Slip 22
+from Satchel to Safe 2 via Inventory. Subsequent screenshots show progress
+at 1/6 and 4/6 and a finished 6/6 result. This confirms the tested Mog House
+reload path and slip transfer; other residences and floors remain untested.
