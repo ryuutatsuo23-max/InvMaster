@@ -58,6 +58,8 @@ def addon_setup():
     lua.globals().withdraw_source=(ROOT/'withdraw.lua').read_text()
     lua.globals().prepare_source=(ROOT/'prepare_bridge.lua').read_text()
     lua.globals().currency_source=(ROOT/'currency.lua').read_text()
+    lua.globals().deposit_preview_source=(ROOT/'crystal_deposit_preview.lua').read_text()
+    lua.globals().deposit_source=(ROOT/'crystal_deposit.lua').read_text()
     lua.globals().custom_source=(ROOT/'customization.lua').read_text()
     lua.globals().ownership_source=(ROOT/'ownership_view.lua').read_text()
     lua.globals().organization_source=(ROOT/'organization.lua').read_text()
@@ -77,6 +79,8 @@ def addon_setup():
     package.preload.withdraw=function() return assert(loadstring(withdraw_source))() end
     package.preload.prepare_bridge=function() return assert(loadstring(prepare_source))() end
     package.preload.currency=function() return assert(loadstring(currency_source))() end
+    package.preload.crystal_deposit_preview=function() return assert(loadstring(deposit_preview_source))() end
+    package.preload.crystal_deposit=function() return assert(loadstring(deposit_source))() end
     package.preload.customization=function() return assert(loadstring(custom_source))() end
     package.preload.ownership_view=function() return assert(loadstring(ownership_source))() end
     package.preload.organization=function() return assert(loadstring(organization_source))() end
@@ -643,7 +647,7 @@ l=organization_setup(); run(l, "rules.categories.materials=6; env.equipped=funct
 l=organization_setup(); run(l, "rules.items['102']={keep=20}; local p=org.plan(data,rules,env); assert(#p.moves==1 and p.moves[1].count==3 and p.blocked[1]:find('short by 5'))")
 l=organization_setup(); run(l, "rules.items['999']={name='Missing',keep=2}; local p=org.plan(data,rules,env); assert(#p.moves==0 and p.blocked[1]:find('not found'))")
 l=organization_setup(); run(l, "env.ready=false; assert(#org.plan(data,rules,env).moves==0 and #org.plan(data,rules,env).blocked==1); assert(#org.plan(nil,rules,env).blocked==1)")
-l=organization_setup(); run(l, "local input={items={['102']={keep=0,protected=true,destination=0},bad={keep=2},['103']={keep=0/0}},categories={materials=6,other=17,invalid=6}}; local n=org.normalize(input); assert(n.items['102'].keep==0 and n.items['102'].protected and n.items['102'].destination==nil and not n.items.bad and n.items['103'].keep==nil and n.categories.materials==6 and n.categories.other==nil and not n.categories.invalid); n.items['102'].keep=5; assert(input.items['102'].keep==0)")
+l=organization_setup(); run(l, "local input={items={['102']={keep=0,protected=true,destination=0},bad={keep=2},['103']={keep=0/0}},categories={materials=6,other=17,invalid=6}}; local n=org.normalize(input); assert(n.items['102'].keep==0 and n.items['102'].protected and n.items['102'].destination==0 and not n.items.bad and n.items['103'].keep==nil and n.categories.materials==6 and n.categories.other==nil and not n.categories.invalid); n.items['102'].keep=5; assert(input.items['102'].keep==0)")
 l=addon_setup(); run(l, """
 cmd('/im'); tick(0); tick(3); active_tab='Organize'; tick(4)
 click='Copper Ore##OrgItem102'; tick(4.1); toggle_checkbox='Leave this item untouched##Org'; tick(4.2)
@@ -657,8 +661,8 @@ assert(not bob.organization.items['102'] and alice.organization.items['102'].pro
 
 l=addon_setup(); run(l, """
 cmd('/im'); tick(0); tick(3); active_tab='Organize'; org_subtab='Category rules'; tick(4)
-open_combo='Category##Org'; click='Materials##OrgCategory'; tick(4.1); open_combo='Category storage##Org'
-click='Sack##Category storage##Org'; tick(4.2); open_combo=nil
+open_combo='Category##Org'; click='Materials##OrgCategory'; tick(4.1); open_combo='Category destination##Org'
+click='Sack##Category destination##Org'; tick(4.2); open_combo=nil
 assert(current_profile.organization.categories.materials==nil)
 click='Apply category rule'; tick(4.3); assert(current_profile.organization.categories.materials==6 and saves==1)
 org_subtab='Item rules'; click='Copper Ore##OrgItem102'; tick(4.4)
@@ -732,7 +736,7 @@ for mode in ['timeout_then_deliver','confirm_on_deadline']:
 l=organization_run_setup(); run(l, "assert(runner:start(preview())); step(); owner=nil; deliver(); step(); step(); assert(runner:busy() and #sent==1); owner='Alice:100:1'; step(); step(); assert(not runner:busy() and #sent==1)")
 l=organization_run_setup(); run(l, "send_error=true; assert(runner:start(preview())); step(); step(); step(); assert(runner:busy() and #sent==1); runner:cancel(); deliver(); step(); step(); assert(not runner:busy() and #sent==1)")
 l=organization_run_setup(); run(l, "assert(runner:start(preview())); step(); slots[7][1].Id=101; deliver(); step(); step(); assert(not runner:busy() and #sent==1 and runner.message:find('changed or is blocked'))")
-l=organization_run_setup(); run(l, "capacity[0]=80; for i=3,53 do slots[0][i]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)} end; counts[0]=53; local p=preview(); assert(#p.moves>50 and not runner:start(p) and #sent==0 and runner.message:find('50 transfers'))")
+l=organization_run_setup(); run(l, "capacity[0]=80; for i=3,53 do slots[0][i]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)} end; counts[0]=53; local p=preview(); assert(#p.moves>50 and runner:start(p) and #sent==0 and #runner.active.moves==50 and runner.active.deferred>0)")
 # Saved rule markers are green; draft changes alone do not create a marker.
 l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); active_tab='Organize'; tick(4); assert(not colored or not colored['[rule]']); current_profile.organization.items['102']={name='Copper Ore',protected=true}; tick(4.1); assert(colored['[rule]'][2]==1 and colored['[rule]'][1]<0.5 and #sent==0)")
 l=addon_setup(); run(l, """
@@ -811,6 +815,313 @@ slots[5][2]=slots[0][2]; counts[5]=2; slots[0][2]=nil; counts[0]=1
 tick(5); tick(5.5); assert(#sent==2 and sent[2].id==0x03A and sent[2].data[5]==5)
 click='Stop organization'; tick(5.6); slots[5][1].Count=13; slots[5][2]=nil; counts[5]=1
 tick(6); tick(6.5); assert(#sent==2 and shown('Stopped by you') and saves==0)
+""")
+
+def deposit_setup():
+    l=addon_setup()
+    run(l, """
+    dp=require('crystal_deposit_preview'); element=1; loose=5; clusters=2; balance=100; npc={id=100}; pending=false
+    bag={id=0,state='Client snapshot',free=0,items={
+      {id=4096,name='Fire Crystal',slot=1,count=3,flags=0,price=0,extra=string.rep('x',28),stack_size=12},
+      {id=4096,name='Fire Crystal',slot=2,count=4,flags=0,price=0,extra=string.rep('x',28),stack_size=12},
+      {id=4104,name='Fire Cluster',slot=3,count=2,flags=0,price=0,extra=string.rep('x',28),stack_size=12}}}
+    function deposit_plan() return dp.plan(bag,element,loose,clusters,balance,npc,'Move within 6 yalms.',pending) end
+    """)
+    return l
+
+l=deposit_setup(); run(l, "local p=deposit_plan(); assert(p.units==29 and p.projected==129 and #p.rows==3 and p.rows[2].count==2 and #p.notices==0 and p.free==0 and #sent==0); assert(bag.items[2].count==4)")
+for mutation in ["element=0", "element=9", "loose=-1", "loose=0/0", "loose=math.huge", "clusters=417", "clusters=1.5", "loose=0; clusters=0", "balance=nil", "balance=5001", "balance=4990", "npc=nil", "pending=true", "bag=nil", "bag.id=5", "bag.state='Updating'", "loose=8", "clusters=3", "bag.items[1].flags=5", "bag.items[1].price=1", "bag.items[1].extra=nil", "bag.items[1].stack_size=nil"]:
+    l=deposit_setup(); run(l, mutation+"; local p=deposit_plan(); assert(#p.notices>0 and #sent==0)")
+for element in range(1,9):
+    l=deposit_setup(); run(l, f"element={element}; for _,item in ipairs(bag.items) do item.id=item.id+element-1 end; local p=deposit_plan(); assert(p.units==29 and #p.rows==3 and #p.notices==0)")
+l=deposit_setup(); run(l, "bag.items={}; loose=9; clusters=0; for i=1,9 do bag.items[i]={id=4096,name='Fire Crystal',slot=i,count=1,flags=0,price=0,extra=string.rep('x',28),stack_size=12} end; local p=deposit_plan(); assert(#p.rows==9 and p.notices[1]:find('eight trade slots'))")
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); active_tab='Currency'; click='Plan crystal deposit'; tick(4)
+edit_interval=1; tick(4.1); click='Preview crystal deposit'; tick(4.2)
+assert(shown('1 crystal units selected') and shown('Stored balance is unknown') and shown('Not enough eligible') and #sent==0)
+local bob={}; switch_profile(bob); cmd('/im'); tick(5); assert(not shown('Preview only:') and #sent==0)
+""")
+
+def deposit_trace_setup():
+    l=addon_setup(); l.execute(PACKET_HELPERS)
+    run(l, """
+    writes={}; trace_name='Ephemeral Moogle'; trace_id=100
+    t=require('crystal_trace').new({now=function() return now end,
+      name=function(i) return i==12 and trace_name or 'Other NPC' end,
+      id=function() return trace_id end,write=function(s) writes[#writes+1]=s; return true end})
+    trade=wire(0x40,{[4]=100,[8]=1,[0x30]=1,[0x3A]=12,[0x3C]=1})
+    menu=wire(0x30,{[4]=100,[0x28]=12,[0x2A]=234,[0x2C]={0x6A,2}})
+    assert(t:start(true)); assert(writes[1]=='BEGIN manual crystal deposit trace')
+    """)
+    return l
+l=deposit_trace_setup(); run(l, "t:observe('in',0x034,menu); assert(#writes==1); t:observe('out',0x036,trade); t:observe('in',0x034,menu); t:observe('out',0x05B,wire(0x14,{[4]=100})); t:observe('in',0x05C,wire(0x24,{})); t:observe('in',0x113,wire(0xF8,{[0xE8]=101})); assert(#writes==6 and writes[6]:find('payload@E8') and #sent==0)")
+for mutation in ["trade='short'", "trade=nil", "trace_name='Other NPC'", "trace_id=101"]:
+    l=deposit_trace_setup(); run(l, mutation+"; t:observe('out',0x036,trade); t:observe('in',0x034,menu); assert(#writes==1 and #sent==0)")
+l=deposit_trace_setup(); run(l, "t:observe('out',0x036,trade); t:observe('in',0x034,wire(0x30,{[4]=101,[0x28]=12})); t:observe('in',0x05C,wire(0x24,{})); assert(#writes==2)")
+l=deposit_trace_setup(); run(l, "t:observe('out',0x036,trade); t:observe('in',0x034,menu); for i=1,40 do t:observe('in',0x05C,wire(0x24,{})) end; assert(#writes==25 and not t.deadline and #sent==0)")
+l=deposit_trace_setup(); run(l, "now=61; t:observe('out',0x036,trade); assert(#writes==1 and not t.deadline); t:start(true); t:observe('in',0x00B,''); assert(not t.deadline)")
+
+for keep in ['nil','0','5','14','99']:
+    l=organization_setup(); run(l, "rules.items['102']={destination=0,keep="+keep+"}; local p=org.plan(data,rules,env); assert(#p.moves==1 and p.moves[1].source==7 and p.moves[1].destination==0 and p.moves[1].count==3 and #p.blocked==0)")
+l=organization_setup(); run(l, "rules.categories.materials=0; rules.items['102']={keep=14}; local p=org.plan(data,rules,env); assert(#p.moves==1 and p.moves[1].count==3 and p.moves[1].destination==0); rules.items['102'].destination=6; assert(org.plan(data,rules,env).moves[1].count==2)")
+l=organization_setup(); run(l, "rules.items['102']={destination=0,protected=true}; assert(#org.plan(data,rules,env).moves==0)")
+l=organization_setup(); run(l, "rules.items['102']={destination=0}; data[1].free=0; local p=org.plan(data,rules,env); assert(#p.moves==0 and #p.blocked==1)")
+l=organization_setup(); run(l, "rules.items['102']={destination=0}; env.access[7]=nil; local p=org.plan(data,rules,env); assert(#p.moves==0 and #p.blocked==1)")
+l=organization_run_setup(); run(l, """
+rules.items['102']={destination=0,keep=14}
+slots[6][1]={Id=102,Count=2,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[6]=1
+assert(runner:start(preview())); step(); assert(sent[1][9]==6 and sent[1][10]==0 and sent[1][5]==2)
+deliver(); step(); step(); assert(#sent==2 and sent[2][9]==7 and sent[2][10]==0 and sent[2][5]==3)
+deliver(); step(); step(); assert(not runner:busy() and #preview().moves==0)
+""")
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); active_tab='Organize'; click='Copper Ore##OrgItem102'; tick(4)
+open_combo='Destination##Org'; click='Inventory##Destination##Org'; tick(4.1); open_combo=nil
+click='Apply item rule'; tick(4.2); assert(current_profile.organization.items['102'].destination==0 and saves==1)
+local saved=current_profile; switch_profile(saved); assert(saved.organization.items['102'].destination==0 and #sent==0)
+""")
+
+def active_deposit_setup():
+    l=deposit_setup(); l.execute(PACKET_HELPERS)
+    run(l, """
+    dc=require('crystal_deposit'); owner='Alice:100:235'; npc={name='Ephemeral Moogle',id=0x010EB1B1,index=433,zone=235,key=owner}
+    loose=1; clusters=0; changed=0; available=true; values={100,100,100,100,100,100,100,100}
+    function numbers_packet(size,offset,values,width)
+      local fields={}
+      for i,n in ipairs(values) do local b={}; for j=1,width do b[j]=n%256; n=math.floor(n/256) end; fields[offset+(i-1)*width]=b end
+      return wire(size,fields)
+    end
+    function currency_packet(after)
+      local v={}; for i,n in ipairs(values) do v[i]=n+(after and i==element and (loose+clusters*12) or 0) end
+      return numbers_packet(0xF8,0xE8,v,2)
+    end
+    function menu_packet()
+      local fields={[4]={0xB1,0xB1,0x0E,1},[0x28]={0xB1,1},[0x2A]=235,[0x2C]={0x6A,2}}
+      fields[8+(element-1)*4]={clusters,0,loose,0}; return wire(0x30,fields)
+    end
+    function update_packet()
+      local v={}; for i,n in ipairs(values) do v[i]=n+(i==element and (loose+clusters*12) or 0) end
+      return numbers_packet(0x24,4,v,2)
+    end
+    d=dc.new({now=function() return now end,key=function() return owner end,
+      target=function() if available then local copy={}; for k,v in pairs(npc) do copy[k]=v end; return copy end end,
+      inventory=function() return bag end,changed=function() changed=changed+1 end,
+      send=function(id,p) sent[#sent+1]={id=id,data=p}; if send_fail==#sent then error('uncertain send') end end})
+    function start_deposit() return d:start(element,loose,clusters,deposit_plan()) end
+    function observe(id,data) local e={id=id,data=data}; d:observe(e); return e end
+    function dtick() now=now+0.3; d:tick() end
+    function remove_deposit() for _,item in ipairs(bag.items) do if item.id==(loose>0 and 4095+element or 4103+element) then item.count=item.count-(loose+clusters); break end end end
+    """)
+    return l
+
+for is_cluster in [False,True]:
+    l=active_deposit_setup()
+    if is_cluster: run(l, "loose=0; clusters=1")
+    run(l, """
+    assert(start_deposit() and #sent==1 and sent[1].id==0x10F); assert(not start_deposit())
+    observe(0x113,currency_packet(false)); assert(#sent==2 and sent[2].id==0x036 and sent[2].data[9]==1 and sent[2].data[61]==1)
+    assert(observe(0x034,menu_packet()).blocked); assert(#sent==3 and sent[3].data[15]==1)
+    observe(0x05C,update_packet()); dtick(); assert(#sent==3)
+    remove_deposit(); dtick(); dtick(); assert(#sent==5 and sent[4].id==0x05B and sent[4].data[15]==0 and sent[5].id==0x10F)
+    observe(0x113,currency_packet(true)); dtick(); dtick(); assert(not d.pending and changed==1 and d.message:find('confirmed'))
+    dtick(); assert(#sent==5)
+    """)
+for mutation in ["npc.zone=0", "npc.id=0", "npc.index=0", "npc.name='Shami'", "available=false", "loose=4", "clusters=1", "loose=-1", "loose=0/0", "bag.items[1].flags=5"]:
+    l=active_deposit_setup(); run(l, mutation+"; assert(not start_deposit() and #sent==0)")
+for mutation in ["npc.id=100", "available=false", "bag.items[1].count=2", "bag.items[1].extra=string.rep('y',28)", "bag.items[1].flags=5", "values[1]=5000"]:
+    l=active_deposit_setup(); run(l, "assert(start_deposit()); "+mutation+"; observe(0x113,currency_packet(false)); assert(not d.pending and #sent==1)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); d:cancel(); observe(0x113,currency_packet(false)); assert(not d.pending and #sent==1)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); now=11; dtick(); observe(0x113,currency_packet(false)); assert(not d.pending and #sent==1)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,'short'); assert(not d.pending and #sent==1)")
+for bad_menu in ["'short'", "wire(0x30,{})", "wire(0x30,{[4]={0xB1,0xB1,0x0E,1},[0x28]={0xB1,1},[0x2A]=235,[0x2C]={0x69,2}})"]:
+    l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,currency_packet(false)); assert(not observe(0x034,"+bad_menu+").blocked); assert(d.pending.stage=='uncertain' and #sent==2); dtick(); assert(#sent==2)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,currency_packet(false)); loose=2; assert(not observe(0x034,menu_packet()).blocked and d.pending.stage=='uncertain' and #sent==2)")
+for mutation in ["available=false", "owner=nil", "now=20"]:
+    l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,currency_packet(false)); "+mutation+"; observe(0x034,menu_packet()); assert(d.pending.stage=='uncertain' and #sent==2)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,currency_packet(false)); observe(0x034,menu_packet()); observe(0x05C,wire(0x24,{})); assert(d.pending.stage=='uncertain' and #sent==3)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,currency_packet(false)); observe(0x034,menu_packet()); observe(0x05C,update_packet()); now=20; dtick(); remove_deposit(); dtick(); assert(d.pending.stage=='uncertain' and #sent==3)")
+for fail in [1,2,3,4,5]:
+    l=active_deposit_setup(); run(l, f"send_fail={fail}; assert(start_deposit()); observe(0x113,currency_packet(false)); observe(0x034,menu_packet()); observe(0x05C,update_packet()); remove_deposit(); dtick(); dtick(); observe(0x113,currency_packet(true)); dtick(); assert(d.pending.stage=='uncertain' and #sent=={fail}); d:cancel(); assert(d.message:find('No retry'))")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,currency_packet(false)); d:manual_action({id=0x05B}); observe(0x034,menu_packet()); assert(d.pending.stage=='uncertain' and #sent==2)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); d:observe({id=0x113,data=currency_packet(false),injected=true}); d:observe({id=0x113,data=currency_packet(false),blocked=true}); assert(#sent==1); observe(0x113,currency_packet(false)); observe(0x034,menu_packet()); observe(0x034,menu_packet()); assert(d.pending.stage=='uncertain' and #sent==3)")
+l=active_deposit_setup(); run(l, "assert(start_deposit()); observe(0x113,currency_packet(false)); observe(0x034,menu_packet()); observe(0x05C,update_packet()); remove_deposit(); dtick(); dtick(); observe(0x113,currency_packet(false)); assert(d.pending.stage=='uncertain' and #sent==5 and changed==0)")
+
+for selected_element in range(1,9):
+    l=active_deposit_setup(); run(l, f"element={selected_element}; loose=12; bag.items[1].count=12; for _,item in ipairs(bag.items) do item.id=item.id+element-1 end; assert(start_deposit()); observe(0x113,currency_packet(false)); assert(sent[2].data[9]==12); assert(observe(0x034,menu_packet()).blocked and #sent==3)")
+l=addon_setup(); l.execute(PACKET_HELPERS); run(l, """
+zone=235; target_index=433; target_id=0x010EB1B1; target_name='Ephemeral Moogle'; target_distance=9
+resource_data[4096]={Name={[1]='Fire Crystal'},StackSize=12,Type=1}
+slots[0][3]={Id=4096,Count=2,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3
+cmd('/im'); tick(0); tick(3)
+callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=100})})
+active_tab='Currency'; click='Plan crystal deposit'; tick(4); edit_interval=1; tick(4.1)
+click='Preview crystal deposit'; tick(4.2); assert(buttons['Confirm crystal deposit'] and #sent==0)
+click='Confirm crystal deposit'; tick(4.3); assert(#sent==1 and sent[1].id==0x10F)
+callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=100})}); assert(#sent==2 and sent[2].id==0x036 and sent[2].data[49]==3)
+local menu={id=0x034,data=wire(0x30,{[4]={0xB1,0xB1,0x0E,1},[8]={0,0,1,0},[0x28]={0xB1,1},[0x2A]=235,[0x2C]={0x6A,2}})}
+callbacks.packet_in(menu); assert(menu.blocked and #sent==3)
+callbacks.packet_in({id=0x05C,data=wire(0x24,{[4]=101})}); slots[0][3].Count=1
+tick(5); tick(5.3); assert(#sent==5 and sent[4].data[15]==0)
+callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=101})}); tick(5.6); tick(5.9)
+assert(shown('Last crystal deposit: Deposited 1 crystal units') and current_profile.currency_cache.crystals[1]==101 and #sent==5)
+""")
+
+def batch_deposit_setup(count=17):
+    l=active_deposit_setup()
+    run(l, f"""
+    bag.items={{}}
+    for i=1,{count} do
+      bag.items[i]={{id=4096+math.floor(((i-1)%16)/2)+(i%2==0 and 8 or 0),name='Crystal fixture',slot=i,count=(i-1)%3+1,flags=0,price=0,extra=string.rep('x',28),stack_size=12}}
+    end
+    function all_preview() return dp.all(bag,values,npc,nil,false) end
+    function finish_batch(menu_id)
+      assert(d.pending.stage=='balance')
+      observe(0x113,numbers_packet(0xF8,0xE8,values,2))
+      local trade=sent[#sent]; assert(trade.id==0x036 and trade.data[61]<=8)
+      local params={{0,0,0,0,0,0,0,0}}; local removals={{}}
+      for entry=1,trade.data[61] do
+        local slot=trade.data[48+entry]; local n=trade.data[9+(entry-1)*4]
+        local found
+        for _,item in ipairs(bag.items) do if item.slot==slot then found=item end end
+        assert(found and found.count==n); removals[slot]=true
+        local cluster=found.id>=4104; local element=found.id-(cluster and 4103 or 4095)
+        params[element]=params[element]+n*(cluster and 1 or 65536)
+        values[element]=values[element]+n*(cluster and 12 or 1)
+      end
+      local menu=numbers_packet(0x30,8,params,4)
+      local tail=numbers_packet(8,4,{{npc.id}},4)..string.rep(string.char(0),32)..numbers_packet(8,0,{{npc.index,npc.zone,menu_id or 618,0}},2)
+      menu=tail:sub(1,8)..menu:sub(9,40)..tail:sub(41)
+      assert(observe(0x034,menu).blocked)
+      observe(0x05C,numbers_packet(0x24,4,values,2))
+      local remaining={{}}; for _,item in ipairs(bag.items) do if not removals[item.slot] then remaining[#remaining+1]=item end end; bag.items=remaining
+      dtick(); dtick(); assert(sent[#sent].id==0x10F)
+      observe(0x113,numbers_packet(0xF8,0xE8,values,2)); dtick(); dtick()
+    end
+    """)
+    return l
+
+for count in [1,8,9,16,17,80]:
+    l=batch_deposit_setup(count)
+    run(l, f"""
+    local p=all_preview(); assert(#p.rows=={count} and p.batches==math.ceil({count}/8) and p.can_start)
+    assert(d:start_all(p)); assert(not d:start_all(p))
+    local done=0
+    while d.pending do
+      if d.pending.stage=='next' then dtick() end
+      finish_batch(); done=done+1; assert(done<=10)
+    end
+    assert(done==math.ceil({count}/8) and #bag.items==0 and #sent==done*5 and changed==done)
+    dtick(); assert(#sent==done*5)
+    """)
+# Packet packing uses all eight item entries; the ninth remains empty, no gil.
+l=batch_deposit_setup(8); run(l, "assert(d:start_all(all_preview())); observe(0x113,numbers_packet(0xF8,0xE8,values,2)); local p=sent[2].data; assert(#p==64 and p[61]==8 and p[49]==1 and p[56]==8 and p[57]==0 and p[41]==0 and p[45]==0); for i=1,8 do assert(p[9+(i-1)*4]==(i-1)%3+1) end; assert(d.pending.params[1]==65538 and d.pending.units_by_element[1]==25)")
+for mutation in ["bag.items[1].count=2", "bag.items[1].extra=string.rep('y',28)", "bag.items[1].flags=5", "bag.items[1].id=999", "npc.id=0"]:
+    l=batch_deposit_setup(); run(l, "local p=all_preview(); "+mutation+"; assert(not d:start_all(p) and #sent==0)")
+l=batch_deposit_setup(); run(l, "values[1]=5000; local p=all_preview(); assert(not p.can_start and #p.notices>0 and not d:start_all(p) and #sent==0)")
+l=batch_deposit_setup(); run(l, "local p=all_preview(); assert(d:start_all(p)); values[1]=5000; observe(0x113,numbers_packet(0xF8,0xE8,values,2)); assert(not d.pending and #sent==1)")
+l=batch_deposit_setup(); run(l, "bag.items[1].flags=5; bag.items[2].id=999; local p=all_preview(); assert(#p.rows==15 and #p.notices==1 and p.can_start); assert(p.rows[1].slot==3)")
+l=batch_deposit_setup(); run(l, "assert(d:start_all(all_preview())); d:cancel(); assert(not d.pending and #sent==1)")
+l=batch_deposit_setup(); run(l, "assert(d:start_all(all_preview())); finish_batch(); assert(d.pending.stage=='next' and #sent==5); d:cancel(); dtick(); assert(not d.pending and #sent==5)")
+l=batch_deposit_setup(); run(l, "assert(d:start_all(all_preview())); observe(0x113,numbers_packet(0xF8,0xE8,values,2)); d:cancel(); assert(d.pending.stop_requested and #sent==2)")
+# Stop after send: finish the current batch, then suppress the rest.
+l=batch_deposit_setup(); run(l, "local send_original=sent; assert(d:start_all(all_preview())); local original_observe=d.observe; d.observe=function(self,e) original_observe(self,e); if self.pending and self.pending.stage=='menu' then self:cancel() end end; finish_batch(); assert(not d.pending and #sent==5 and #bag.items==9 and d.message:find('Stopped'))")
+for mutation in ["bag.items[1].count=12", "values[5]=5000", "npc.id=100"]:
+    l=batch_deposit_setup(); run(l, "assert(d:start_all(all_preview())); finish_batch(); "+mutation+"; dtick(); if d.pending.stage=='balance' then observe(0x113,numbers_packet(0xF8,0xE8,values,2)) else now=20; dtick() end; assert(not d.pending and #sent<=6)")
+l=batch_deposit_setup(); run(l, "assert(d:start_all(all_preview())); finish_batch(); owner=nil; dtick(); assert(not d.pending and #sent==5)")
+l=batch_deposit_setup(); run(l, "assert(d:start_all(all_preview())); observe(0x113,numbers_packet(0xF8,0xE8,values,2)); now=20; dtick(); dtick(); assert(d.pending.stage=='uncertain' and #sent==2)")
+l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); active_tab='Currency'; click='Preview deposit all crystals / clusters'; tick(4); assert(shown('No eligible crystals') and not buttons['Confirm deposit all'] and #sent==0)")
+
+l=addon_setup(); l.execute(PACKET_HELPERS); run(l, """
+zone=235; target_index=433; target_id=0x010EB1B1; target_name='Ephemeral Moogle'; target_distance=9
+resource_data[4096]={Name={[1]='Fire Crystal'},StackSize=12,Type=1}
+slots[0][3]={Id=4096,Count=2,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3
+cmd('/im'); tick(0); tick(3); callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=100})})
+active_tab='Currency'; click='Preview deposit all crystals / clusters'; tick(4)
+assert(buttons['Confirm deposit all'] and shown('1 Inventory stacks in 1 trade(s)') and #sent==0)
+click='Confirm deposit all'; tick(4.1); assert(#sent==1 and sent[1].id==0x10F)
+cmd('/im depositstop'); tick(4.2); callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=100})})
+assert(#sent==1 and shown('Deposit stopped'))
+""")
+
+# Deposit replies use the freshly verified menu, independent of city/NPC ID.
+for zone_id, npc_id, npc_index, menu_id in [(234, 0x010EA111, 273, 777), (230, 0x010E6123, 291, 910), (256, 0x01100080, 128, 65535)]:
+    l=active_deposit_setup()
+    run(l, f"""
+    npc.zone={zone_id}; npc.id={npc_id}; npc.index={npc_index}
+    function menu_packet()
+      local params={{0,0,0,0,0,0,0,0}}; params[element]=loose*65536+clusters
+      local head=numbers_packet(8,4,{{npc.id}},4)
+      local body=numbers_packet(40,8,params,4)
+      local tail=numbers_packet(0x30,0x28,{{npc.index,npc.zone,{menu_id},0}},2)
+      return head..body:sub(9)..tail:sub(41)
+    end
+    assert(start_deposit()); observe(0x113,currency_packet(false))
+    assert(observe(0x034,menu_packet()).blocked)
+    assert(sent[3].data[19]+256*sent[3].data[20]=={menu_id})
+    observe(0x05C,update_packet()); remove_deposit(); dtick(); dtick()
+    assert(sent[4].data[19]+256*sent[4].data[20]=={menu_id})
+    observe(0x113,currency_packet(true)); dtick(); dtick()
+    assert(not d.pending and changed==1 and #sent==5)
+    """)
+for offset, byte_value in [(4,0), (0x28,0), (0x2A,0), (0x2C,0)]:
+    l=active_deposit_setup()
+    run(l, f"""
+    assert(start_deposit()); observe(0x113,currency_packet(false))
+    local menu=menu_packet(); local offset={offset}
+    menu=menu:sub(1,offset)..string.char({byte_value},0)..menu:sub(offset+3)
+    assert(not observe(0x034,menu).blocked and d.pending.stage=='uncertain' and #sent==2)
+    """)
+# Each batch discards the previous menu before receiving the next one.
+l=batch_deposit_setup(9); run(l, "assert(d:start_all(all_preview())); finish_batch(); assert(d.pending.stage=='next' and d.pending.menu==618); dtick(); assert(d.pending.stage=='balance' and d.pending.menu==nil); finish_batch(); assert(not d.pending and changed==2)")
+
+l=batch_deposit_setup(9); run(l, "npc.zone=234; npc.id=0x010EA111; npc.index=273; assert(d:start_all(all_preview())); finish_batch(777); assert(sent[3].data[19]+sent[3].data[20]*256==777 and sent[4].data[19]+sent[4].data[20]*256==777); dtick(); finish_batch(888); assert(not d.pending and changed==2 and sent[8].data[19]+sent[8].data[20]*256==888 and sent[9].data[19]+sent[9].data[20]*256==888)")
+
+# Large organization plans retain full routes and require explicit fresh runs.
+def large_organization_setup(direct, routed):
+    l=organization_run_setup()
+    run(l, f"""
+    capacity[0]=80; counts[0]={direct}; slots[0]={{}}
+    counts[7]={routed}; slots[7]={{}}
+    for bag,n in pairs({{[0]={direct},[7]={routed}}}) do
+      for i=1,n do slots[bag][i]={{Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}} end
+    end
+    function finish_run()
+      local handled=#sent; local guard=0; step()
+      while runner:busy() do
+        if #sent>handled then assert(#sent==handled+1); deliver(); handled=handled+1 end
+        step(); step(); guard=guard+1; assert(guard<110)
+      end
+    end
+    """)
+    return l
+
+for direct, routed, first_moves, first_steps in [(50,0,50,50),(51,0,50,50),(0,26,25,50),(49,2,49,49),(48,3,49,50),(0,51,25,50)]:
+    l=large_organization_setup(direct,routed)
+    run(l, f"""
+    local p=preview(); local s=org.run_summary(p)
+    assert(s.count=={first_moves} and s.steps=={first_steps} and s.total_steps=={direct+routed*2})
+    assert(runner:start(p) and #sent==0 and #runner.active.moves=={first_moves})
+    finish_run(); assert(#sent=={first_steps})
+    step(); step(); assert(not runner:busy() and #sent=={first_steps})
+    local left=preview(); assert(#left.moves=={direct+routed-first_moves})
+    if #left.moves>0 then
+      assert(runner.message:find('deferred') and not runner:start(p))
+      assert(runner:start(left)); finish_run(); assert(#sent<=100)
+    end
+    """)
+# Stale deferred items still invalidate the reviewed full plan; Stop stays bounded.
+l=large_organization_setup(51,0); run(l, "local p=preview(); slots[0][51].Count=2; assert(not runner:start(p) and #sent==0)")
+l=large_organization_setup(49,2); run(l, "assert(runner:start(preview())); step(); runner:cancel(); deliver(); step(); step(); assert(not runner:busy() and #sent==1); step(); assert(#sent==1)")
+# Stacking only queues destinations included in this run.
+l=large_organization_setup(50,1); run(l, "resource_data[103]={Name={[1]='Synthetic Ore'},StackSize=99,Type=1}; slots[7][1].Id=103; rules.items['103']={destination=5}; env.access[5]=true; capacity[5]=80; counts[5]=0; slots[5]={}; assert(runner:start(preview(),true)); assert(#runner.active.moves==50 and runner.active.deferred==1 and #runner.active.stack_bags==1 and runner.active.stack_bags[1]==6); runner:cancel(); step(); assert(#stack_sent==0 and #sent==0)")
+# Preview keeps Run above the scrolling list and distinguishes deferred moves.
+l=addon_setup(); run(l, """
+capacity[0]=80; slots[0]={}; counts[0]=51; capacity[5]=80
+for i=1,51 do slots[0][i]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)} end
+cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={destination=5}
+active_tab='Organize'; org_subtab='Preview'; click='View organization plan'; tick(4)
+assert(buttons['Run organization'] and shown('50 / 50 transfer steps this run') and shown('50 moves this run | 1 deferred | 2 runs') and shown('Later runs - fresh preview') and #sent==0)
+click='Run organization'; tick(4.2); tick(4.3); assert(#sent==1)
 """)
 
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

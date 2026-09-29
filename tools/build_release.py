@@ -14,7 +14,7 @@ FILES = (
     'stack_sort.lua', 'bag_access.lua', 'ownership_view.lua', 'item_categories.lua',
     'category_data.lua', 'customization.lua', 'withdraw.lua', 'prepare_bridge.lua',
     'currency.lua', 'crystal_trace.lua', 'crystal_withdraw.lua', 'shami.lua',
-    'nearby_npc.lua', 'bag_monitor.lua', 'organization.lua', 'organization_view.lua', 'organization_run.lua', 'LICENSE',
+    'nearby_npc.lua', 'bag_monitor.lua', 'organization.lua', 'organization_view.lua', 'organization_run.lua', 'crystal_deposit_preview.lua', 'crystal_deposit.lua', 'LICENSE',
     'third_party/categories.md', 'third_party/LandSandBoat-LICENSE',
 )
 

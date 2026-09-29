@@ -62,17 +62,16 @@ function M.new(env)
             end
             local fresh=planner.plan(data,env.rules(),{ready=true,key=key,access=env.access(),equipped=env.equipped});
             if #fresh.moves~=#plan.moves or #plan.moves==0 then self.message='Plan changed or empty. View a fresh plan.'; return end
-            local moves,cost={},0;
+            local moves={}; local summary=planner.run_summary(fresh);
             for i,m in ipairs(fresh.moves) do
                 local reviewed=plan.moves[i];
                 for _,field in ipairs({'id','source','destination','slot','count'}) do
                     if m[field]~=reviewed[field] then self.message='Plan changed. View a fresh plan.'; return end
                 end
-                cost=cost+(m.via_inventory and 2 or 1); moves[i]=m;
+                if i<=summary.count then moves[i]=m end
             end
-            if cost>50 then self.message='Plan exceeds 50 transfers. Narrow your rules and preview again.'; return end
             if stack_after and type(env.send_stack)~='function' then self.message='Stacking unavailable; nothing sent.'; return end
-            self.active={key=key,rules_signature=plan.rules_signature,access=access_signature(env.access()),moves=moves,index=1,done=0};
+            self.active={key=key,rules_signature=plan.rules_signature,access=access_signature(env.access()),moves=moves,index=1,done=0,deferred=summary.deferred};
             if stack_after then
                 local p=self.active; p.stack_bags={}; p.stack_index=1; p.stacked=0; p.protected_skips=0;
                 local seen={};
@@ -126,7 +125,9 @@ function M.new(env)
                 if not stacker:start(bag_id) then finish(stacker.message or 'Stacking unavailable.'); return end
                 self.pending=stacker.pending; self.message='Organization stacking: '..(stacker.message or 'Awaiting confirmation.'); return;
             end
-            finish('Finished. Review a new plan for any remaining work.'); return;
+            finish(p.deferred>0
+                and ('Run finished. %d moves were deferred. View a fresh plan and confirm the next run.'):format(p.deferred)
+                or 'Finished. Review a new plan for any remaining work.'); return;
         end
         local wanted=p.moves[p.index];
         local data=env.scan();

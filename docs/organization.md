@@ -17,6 +17,11 @@ CraftMaster preparation share the busy lock.
 - Item destinations override category destinations. **Use category rule** removes
   that override. **Leave where it is** disables surplus placement for that rule;
   an independently enabled keep target can still propose refilling Inventory.
+- **Inventory** is a destination for item and category rules (v0.18.1). It gathers
+  all eligible copies from accessible bags, regardless of a saved keep quantity.
+  Items already in Inventory stay there. Protection, space checks, preview and
+  explicit Run still apply; nothing is sold. Existing keep values are preserved
+  for use if the destination is changed back to another bag.
 - No rules, default layout or automatic carry quantities are enabled by default.
 - Rules apply across copies/augments of the same item ID. Per-instance protection
   and protection of a partial quantity are not part of this phase.
@@ -47,7 +52,11 @@ no effect until Apply; previews use saved rules. Busy operations block planning.
 
 - Only the reviewed moves run, with at most 50 transfer steps. A route through
   Inventory counts as two steps. Notices are skipped, never silently converted
-  into new moves. Narrow rules if the preview exceeds the limit.
+  into new moves. Larger plans are split in plan order at whole-move boundaries;
+  a two-step route is never divided between runs. The preview labels the current
+  run and deferred moves. Only the current run is queued. After completion, view
+  a fresh plan and explicitly confirm the next run; nothing automatically resumes.
+  Counts for later runs describe this snapshot and can change after fresh checks.
 - The runner checks the preview against fresh bags and saved rules before
   accepting it. Each next move is revalidated for source identity, quantity,
   equipment, access and space. A changed or blocked move stops the run.
@@ -67,7 +76,8 @@ no effect until Apply; previews use saved rules. Busy operations block planning.
 
 **Stack destination bags after this run** is off for every new preview. It does
 not change the saved manual-transfer auto-stack setting or save a new preference.
-After all reviewed moves confirm, it checks each distinct final destination once.
+After all moves in the current run confirm, it checks each distinct final
+destination of that run once. Deferred-only destinations are not stacked.
 It uses native bag stacking only when partial stacks can free a slot, confirms
 that bag before continuing, and never retries a request. Inventory used only as
 a staging bag is not included.
@@ -87,6 +97,9 @@ Default rules, NPC deposits and full-bag swaps remain outside this phase.
 No saved user data is migrated or discarded.
 
 ## Validation
+
+Splitting large plans is offline-tested. On 2026-09-29 the user deferred its
+live check until a large plan occurs naturally; no test setup is required now.
 
 `python -B test_invmaster.py` covers the planner and mocked UI in addition to the
 existing regression suite. Checks include precedence, protection, keep quantities,
@@ -109,6 +122,9 @@ uncertain sends, context changes, and the UI packet path. A subsequent live run
 confirmed 8/8 moves and stacking in one destination bag, with zero protected-bag
 skips. Its fresh preview showed no remaining moves. Protected-bag skipping and
 Stop during stacking remain offline-tested rather than live-confirmed.
+
+The user also confirmed the v0.18.1 geode-to-Inventory destination rule works
+live; the accompanying screenshot reports 3/3 organization moves confirmed.
 
 OddOrg's public README was used as a feature reference only:
 https://github.com/FFXIOddone/OddOrg

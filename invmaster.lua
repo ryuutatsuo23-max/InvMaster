@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.17.0';
+addon.version = '0.20.2';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -17,6 +17,7 @@ local organization=require 'organization';
 local organization_view=require('organization_view').new();
 local crystal_trace=require('crystal_trace').new({
     now=os.clock,
+    id=function(index) return AshitaCore:GetMemoryManager():GetEntity():GetServerId(index) end,
     name=function(index) return AshitaCore:GetMemoryManager():GetEntity():GetName(index) end,
     write=function(line)
         local file=io.open(addon.path..'crystal-menu-trace.log','a');
@@ -45,18 +46,18 @@ local currency_data;
 local currency_refresh_message,currency_refresh_deadline;
 local currency_next_request=0;
 local currency_refresh_due=false;
-local crystal_withdrawer;
+local crystal_withdrawer,crystal_depositor;
 local shami_controller;
 local withdraw_module=require 'withdraw';
 local withdrawer;
 local mover,sorter,sort_request;
 local preparer,organizer;
-local function base_busy() return (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
+local function base_busy() return (crystal_depositor and crystal_depositor.pending) or (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
 local function other_busy() return base_busy() or (organizer and organizer:busy()) end
 local function busy() return other_busy() or (preparer and preparer:busy()) end
 local function clear_action_messages()
     if busy() then return end -- Never hide an uncertain operation's warning or lock.
-    for _,controller in ipairs({mover,sorter,withdrawer,preparer,crystal_withdrawer,shami_controller,organizer}) do
+    for _,controller in ipairs({mover,sorter,withdrawer,preparer,crystal_withdrawer,shami_controller,organizer,crystal_depositor}) do
         controller.message=nil;
     end
 end
@@ -74,6 +75,7 @@ local selected, snapshot, last_read, next_read;
 local context_key;
 local status = 'Waiting for character data.';
 local function reset()
+    if crystal_depositor then crystal_depositor:cancel() end
     if organizer then organizer:cancel('Stopped: character context reset. No further moves sent.') end
     organization_view:invalidate();
     if preparer then preparer:cancel() end
@@ -159,7 +161,7 @@ local function crystal_target(idle,npc_name,pinned,force)
         if idle and not transfer_context() then return nil,'Finish your current action or NPC conversation first.' end
         local found=nearby_npc:find(npc_name,key,pinned,force);
         if not found then return nil,npc_name..' not available within 6 yalms.' end
-        found.key=key; found.zone=AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0);
+        found.name=npc_name; found.key=key; found.zone=AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0);
         return found;
     end);
     if not ok then return nil,'NPC data unavailable.' end
@@ -174,7 +176,18 @@ crystal_withdrawer=require('crystal_withdraw').new({
     send=function(id,packet) return AshitaCore:GetPacketManager():AddOutgoingPacket(id,packet) end,
     changed=function() next_read=0; currency_refresh_due=true end,
 });
-local crystal_ui={busy=busy,target=crystal_target,
+crystal_depositor=require('crystal_deposit').new({
+    now=os.clock,key=crystal_key,target=function(idle,pinned) return crystal_target(idle,'Ephemeral Moogle',pinned,true) end,
+    inventory=function()
+        local ok,data=pcall(model.scan,AshitaCore:GetMemoryManager():GetInventory(),AshitaCore:GetResourceManager());
+        return ok and data and data[1] or nil;
+    end,
+    send=function(id,packet) return AshitaCore:GetPacketManager():AddOutgoingPacket(id,packet) end,
+    changed=function() next_read=0 end,
+});
+local crystal_ui={busy=busy,target=crystal_target,inventory=function() return snapshot and snapshot[1] end,
+    deposit_all=function(plan) if not busy() then clear_action_messages(); crystal_depositor:start_all(plan) end end,
+    deposit=function(element,loose,clusters,plan) if not busy() then clear_action_messages(); crystal_depositor:start(element,loose,clusters,plan) end end,
     start=function(element,count) if not busy() then clear_action_messages(); crystal_withdrawer:start(element,count) end end};
 local function shami_target(idle,pinned,force) return crystal_target(idle,'Shami',pinned,force) end
 shami_controller=require('shami').new({
@@ -475,6 +488,9 @@ local function render()
             action_message('transfer',mover,mover.pending);
             action_message('Shami action',shami_controller,shami_controller.pending);
             action_message('crystal withdrawal',crystal_withdrawer,crystal_withdrawer.pending);
+            action_message('crystal deposit',crystal_depositor,crystal_depositor.pending);
+            if crystal_depositor.pending and crystal_depositor.pending.batch_count>1 and imgui.Button('Stop crystal deposits') then crystal_depositor:cancel() end
+            if crystal_depositor.pending and crystal_depositor.pending.stage=='balance' and imgui.Button('Cancel deposit before trade') then crystal_depositor:cancel() end
             action_message('collection withdrawal',withdrawer,withdrawer.active or withdrawer.pending);
             action_message('preparation',preparer,preparer:busy());
             action_message('organization',organizer,organizer:busy());
@@ -482,7 +498,7 @@ local function render()
             if preparer.active and imgui.Button('Stop preparation') then preparer:cancel() end
             if withdrawer.active and imgui.Button('Stop withdrawal') then withdrawer:cancel() end
             action_message('stacking action',sorter,sorter.pending);
-            if not busy() and (mover.message or sorter.message or withdrawer.message or preparer.message or crystal_withdrawer.message or shami_controller.message or organizer.message) then
+            if not busy() and (mover.message or sorter.message or withdrawer.message or preparer.message or crystal_withdrawer.message or crystal_depositor.message or shami_controller.message or organizer.message) then
                 if imgui.Button('Clear result') then clear_action_messages() end
             end
             if imgui.BeginTabBar('MainTabs') then
@@ -532,6 +548,7 @@ ashita.events.register('packet_in', 'invmaster_access', function(e)
     crystal_trace:observe('in',e.id,e.data);
     shami_trace:observe('in',e.id,e.data);
     crystal_withdrawer:observe(e);
+    crystal_depositor:observe(e);
     shami_controller:observe(e);
     -- Saved balances survive zoning; they remain labelled as last known.
     if e.id==0x113 and ready() and AshitaCore:GetMemoryManager():GetPlayer():GetIsZoning()==0 then
@@ -551,6 +568,7 @@ ashita.events.register('packet_out','invmaster_crystal_trace',function(e)
     if not e.injected and not e.blocked then crystal_trace:observe('out',e.id,e.data) end
     if not e.injected and not e.blocked then shami_trace:observe('out',e.id,e.data) end
     crystal_withdrawer:manual_action(e);
+    crystal_depositor:manual_action(e);
     shami_controller:manual_action(e);
 end);
 ashita.events.register('command', 'invmaster_command', function(e)
@@ -560,7 +578,8 @@ ashita.events.register('command', 'invmaster_command', function(e)
     if cmd~='/im' and cmd~='/invmaster' and cmd~='/fms' then return end
     e.blocked=true;
     local action, text=rest:match('^(%S+)%s*(.*)$'); action=(action or 'ui'):lower();
-    if action == 'organizestop' then organizer:cancel('Stopped by you. No further moves sent.');
+    if action == 'depositstop' then crystal_depositor:cancel();
+    elseif action == 'organizestop' then organizer:cancel('Stopped by you. No further moves sent.');
     elseif action == 'craftprepare' then
         if require('prepare_bridge').parse(text) then clear_action_messages() end
         preparer:request(text);
@@ -575,12 +594,13 @@ ashita.events.register('command', 'invmaster_command', function(e)
             local ok=shami_trace:start();
             print(ok and '[InvMaster] Passive Shami trace armed for 120 seconds. Browse his menu normally, then cancel. Log: shami-menu-trace.log' or '[InvMaster] Could not open Shami trace log.');
         end
-    elseif action == 'crystaltrace' then
+    elseif action == 'crystaltrace' or action == 'deposittrace' then
         if text=='stop' then crystal_trace:stop(); print('[InvMaster] Crystal trace stopped.');
         elseif ready() then
             shami_trace:stop();
-            local ok=crystal_trace:start();
-            print(ok and '[InvMaster] Passive crystal trace armed for 60 seconds. Talk to the Ephemeral Moogle and manually withdraw crystals. Log: crystal-menu-trace.log' or '[InvMaster] Could not open trace log.');
+            local deposit=action=='deposittrace';
+            local ok=crystal_trace:start(deposit);
+            print(ok and (deposit and '[InvMaster] Passive deposit trace armed for 60 seconds. Manually trade one crystal to the Ephemeral Moogle and finish its dialogue. Log: crystal-menu-trace.log' or '[InvMaster] Passive crystal trace armed for 60 seconds. Talk to the Ephemeral Moogle and manually withdraw crystals. Log: crystal-menu-trace.log') or '[InvMaster] Could not open trace log.');
         end
     elseif action == 'refresh' then next_read=0;
     elseif action == 'status' then
@@ -605,6 +625,7 @@ ashita.events.register('d3d_present', 'invmaster_present', function()
     preparer:tick();
     organizer:tick();
     crystal_withdrawer:tick();
+    crystal_depositor:tick();
     shami_controller:tick();
     if currency_refresh_due and not busy() and crystal_key() and os.clock()>=currency_next_request then
         currency_refresh_due=false; currency_refresh.request();

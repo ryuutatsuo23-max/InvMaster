@@ -46,10 +46,14 @@ Open **Organize** to set quantities to keep in Inventory, choose storage bags,
 or mark an item **Leave this item untouched**. Category rules provide defaults;
 individual item destinations override them. Click **Apply** to save a rule, then
 **View organization plan** to see proposed moves and anything blocking them.
+Choose **Inventory** as the destination to gather all copies of an item there,
+for example before selling. A keep quantity is not required.
 
 Saved item rules have a green **[rule]** marker. Click **Run organization** to
 carry out the reviewed moves, one confirmed transfer at a time. Plans are limited
-to 50 transfer steps. **Stop organization** (or `/im organizestop`) prevents
+to 50 transfer steps per run; larger plans are split without changing your rules.
+The preview separates **This run** from later moves. After a run finishes, view
+a fresh plan and confirm again to continue. **Stop organization** (or `/im organizestop`) prevents
 further sends; a move already sent still needs confirmation.
 
 Optionally tick **Stack destination bags after this run** to combine partial
@@ -72,6 +76,13 @@ Stand within **6 yalms** of the NPC with its normal menu closed. No targeting ne
 - **Shami in Port Jeuno:** right-click a seal or crest to withdraw it or exchange for an orb. Orb purchases show the cost and require confirmation.
 
 Withdrawals check fresh balances and Inventory space before proceeding.
+
+**Plan crystal deposit** previews crystals and clusters already in Inventory.
+At any nearby **Ephemeral Moogle**, confirm a selected stack,
+or choose **Preview deposit all crystals / clusters** then **Confirm deposit all**.
+Deposit all processes up to eight Inventory stacks per trade, confirming each
+trade before continuing. **Stop crystal deposits** cancels remaining batches.
+See [deposit details](docs/crystal-deposits.md).
 
 ## Notes
 

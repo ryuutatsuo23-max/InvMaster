@@ -10,7 +10,7 @@ local function destination(label,current,inherit)
     if imgui.BeginCombo(label,preview) then
         if imgui.Selectable(inherit..'##'..label,current==nil) then value=nil end
         if imgui.Selectable('Leave where it is##'..label,current==-1) then value=-1 end
-        for id=1,16 do
+        for id=0,16 do
             if bags[id] and imgui.Selectable(bags[id]..'##'..label,current==id) then value=id end
         end
         imgui.EndCombo();
@@ -73,8 +73,8 @@ function M.new()
                 local n=tonumber(d.keep[1]); if not n or n~=n or n==math.huge or n==-math.huge then n=0 end
                 d.keep[1]=math.max(0,math.min(7992,math.floor(n)));
             end
-            d.destination=destination('Extra items go to##Org',d.destination,'Use category rule');
-            imgui.TextWrapped('Untouched takes priority over all organization rules. Keep targets refill from storage; only extras use the storage destination. These protections do not block your manual moves.');
+            d.destination=destination('Destination##Org',d.destination,'Use category rule');
+            imgui.TextWrapped('Inventory gathers all copies, regardless of keep quantity. Other destinations receive extras above the keep quantity. Untouched takes priority. These rules do not block manual moves.');
             if imgui.Button('Apply item rule') then
                 data.items[tostring(self.id)]={name=self.name,keep=d.use_keep[1] and d.keep[1] or nil,destination=d.destination,protected=d.protected[1]};
                 self:invalidate(); save();
@@ -95,7 +95,7 @@ function M.new()
             end
             imgui.EndCombo();
         end
-        self.category_dest=destination('Category storage##Org',self.category_dest,'No category rule');
+        self.category_dest=destination('Category destination##Org',self.category_dest,'No category rule');
         if imgui.Button('Apply category rule') then data.categories[self.category]=self.category_dest; self:invalidate(); save() end
         imgui.TextWrapped('Item destinations override category destinations. No rules are enabled by default.');
         imgui.EndTabItem();
@@ -105,20 +105,27 @@ function M.new()
         if self.preview then
             local p=self.preview;
             imgui.Text(('%d proposed moves | %d notices | %d protected item types'):format(#p.moves,#p.blocked,p.protected));
-            imgui.TextWrapped('Only the listed moves will run. Notices are skipped. Stop prevents further sends; a sent move still needs confirmation. No retries.');
-            local steps=0; for _,move in ipairs(p.moves) do steps=steps+(move.via_inventory and 2 or 1) end
-            imgui.Text(('%d / 50 transfer steps (routes via Inventory use two).'):format(steps));
+            local summary=rules.run_summary(p);
+            imgui.TextWrapped('Only moves under This run will execute. Notices are skipped. Stop prevents further sends; a sent move still needs confirmation. No retries.');
+            imgui.Text(('%d / 50 transfer steps this run (routes via Inventory use two).'):format(summary.steps));
+            if summary.deferred>0 then
+                imgui.Text(('%d moves this run | %d deferred | %d runs in this preview'):format(summary.count,summary.deferred,summary.runs));
+                imgui.TextWrapped('After this run, view a fresh plan and confirm the next run. Later runs never start automatically.');
+            end
             if #p.moves>0 then
                 imgui.Checkbox('Stack destination bags after this run',self.stack_after);
                 if self.stack_after[1] then
                     imgui.TextWrapped('After all moves finish, combine partial stacks in destination bags, one bag at a time. Bags containing untouched items are skipped. Stop cancels remaining stacking.');
                 end
             end
-            if steps>50 then imgui.TextWrapped('Narrow your rules to at most 50 transfer steps and preview again.')
-            elseif #p.moves>0 and env.ready and env.run and imgui.Button('Run organization') then env.run(p,self.stack_after[1]) end
+            if #p.moves>0 and env.ready and env.run and imgui.Button('Run organization') then env.run(p,self.stack_after[1]) end
             if #p.moves==0 and #p.blocked==0 then imgui.Text('No moves proposed under the saved rules.') end
             if imgui.BeginChild('OrganizationPlan',{0,0}) then
-                for _,move in ipairs(p.moves) do
+                for i,move in ipairs(p.moves) do
+                    if i==1 then imgui.Text('This run:') end
+                    if i==summary.count+1 then
+                        imgui.Separator(); imgui.Text('Later runs - fresh preview and confirmation required:');
+                    end
                     imgui.TextWrapped(('%d x %s: %s (slot %d) -> %s%s'):format(move.count,move.name,bags[move.source],move.slot,bags[move.destination],move.via_inventory and ' via Inventory' or ''));
                 end
                 for _,reason in ipairs(p.blocked) do

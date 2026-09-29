@@ -2,6 +2,7 @@
 local imgui=require 'imgui';
 local M={};
 local shami=require 'shami';
+local deposit_preview=require('crystal_deposit_preview').new();
 M.crystals={'Fire','Ice','Wind','Earth','Lightning','Water','Light','Dark'};
 M.seals={"Beastmen's Seals","Kindred's Seals","Kindred's Crests","High Kindred's Crests","Sacred Kindred's Crests"};
 -- Copy and validate saved snapshots; never share state between profiles.
@@ -31,7 +32,7 @@ function M.decode(data)
 end
 local selected,quantity=nil,{1};
 local seal_selected,seal_quantity,orb_selected,confirm_orb=nil,{1},nil,nil;
-function M.reset() selected=nil; quantity[1]=1; seal_selected=nil; seal_quantity[1]=1; orb_selected=nil; confirm_orb=nil end
+function M.reset() selected=nil; quantity[1]=1; seal_selected=nil; seal_quantity[1]=1; orb_selected=nil; confirm_orb=nil; deposit_preview:reset() end
 function M.render(data,withdraw,exchange,refresh)
     imgui.TextWrapped('Stored NPC balances. Use Refresh balances to request an update. Right-click a crystal to withdraw at a nearby Ephemeral Moogle. Right-click seals/crests for Shami withdrawals and orb exchanges.');
     if refresh then
@@ -57,6 +58,7 @@ function M.render(data,withdraw,exchange,refresh)
                         end
                     end
                 end
+                if tab[2]=='crystals' and withdraw and withdraw.inventory then deposit_preview:render(M.crystals,data and data.crystals,withdraw) end
                 imgui.EndTabItem();
             end
         end

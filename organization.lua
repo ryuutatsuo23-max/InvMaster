@@ -2,6 +2,19 @@
 local transfer=require 'transfer';
 local categories=require 'item_categories';
 local M={};
+-- Preserve plan order and keep both legs of a routed move in the same run.
+function M.run_summary(plan)
+    local summary={count=0,steps=0,total_steps=0,runs=0};
+    local current=0;
+    for _,move in ipairs(plan.moves) do
+        local cost=move.via_inventory and 2 or 1;
+        if summary.runs==0 or current+cost>50 then summary.runs=summary.runs+1; current=0 end
+        current=current+cost; summary.total_steps=summary.total_steps+cost;
+        if summary.runs==1 then summary.count=summary.count+1; summary.steps=current end
+    end
+    summary.deferred=#plan.moves-summary.count;
+    return summary;
+end
 function M.signature(snapshot)
     local parts={};
     for _,bag in ipairs(snapshot or {}) do
@@ -18,7 +31,7 @@ local function integer(n,low,high)
     return type(n)=='number' and n==n and n==math.floor(n) and n>=low and n<=high;
 end
 local function destination(n)
-    return n==-1 or (integer(n,1,16) and transfer.bags[n]~=nil);
+    return n==-1 or (integer(n,0,16) and transfer.bags[n]~=nil);
 end
 function M.normalize(value)
     value=type(value)=='table' and value or {};
@@ -70,7 +83,7 @@ function M.plan(snapshot,rules,env)
     end
     for id,rule in pairs(rules.items) do
         local n=tonumber(id);
-        if not groups[n] and rule.keep and rule.keep>0 and not rule.protected then
+        if not groups[n] and rule.keep and rule.keep>0 and not rule.protected and rule.destination~=0 then
             block(rule.name,'Keep target cannot be met: item not found in readable bags.');
         end
     end
@@ -97,6 +110,12 @@ function M.plan(snapshot,rules,env)
         else
             local target=rule.destination;
             if target==nil then target=rules.categories[categories.classify(rows[1].item)] end
+            if target==0 then
+                -- Inventory destination means gather every available copy, not a refill quota.
+                for _,row in ipairs(rows) do
+                    if row.bag~=0 then propose(row,0,row.item.count) end
+                end
+            else
             local carried=0;
             for _,row in ipairs(rows) do if row.bag==0 then carried=carried+row.item.count end end
             local needed=math.max(0,(rule.keep or 0)-carried);
@@ -120,6 +139,7 @@ function M.plan(snapshot,rules,env)
                         if used[row]<count and row.bag~=target then block(row.item.name,'Remaining source stack deferred until refill is confirmed.') end
                     elseif count>0 and row.bag~=target then propose(row,target,count) end
                 end
+            end
             end
         end
     end
