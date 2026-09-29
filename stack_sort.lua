@@ -22,6 +22,9 @@ local function equal(a,b)
     for k,v in pairs(b) do if a[k]~=v then return false end end
     return true;
 end
+function M.savings(bag)
+    local _,_,saving=contents(bag); return saving;
+end
 function M.new(env)
     local self={pending=nil,message=nil};
     function self:reset() self.pending=nil; self.message=nil end
@@ -35,6 +38,10 @@ function M.new(env)
             local totals,expected,saving=contents(snapshot);
             if not totals then self.message='Cannot validate bag contents for stacking.'; return end
             if saving==0 then self.message='No combinable partial stacks in this bag.'; return end
+            if env.validate then
+                local allowed,problem=env.validate(snapshot);
+                if not allowed then self.message=problem or 'Stacking cancelled; nothing sent.'; return end
+            end
             if env.context()~=key or not env.access()[bag] then self.message='Access changed; no sort sent.'; return end
             self.pending={bag=bag,key=key,totals=totals,expected=expected,deadline=env.now()+8,next_check=0};
             self.message='Stacking requested; waiting for bag confirmation.';

@@ -60,6 +60,9 @@ def addon_setup():
     lua.globals().currency_source=(ROOT/'currency.lua').read_text()
     lua.globals().custom_source=(ROOT/'customization.lua').read_text()
     lua.globals().ownership_source=(ROOT/'ownership_view.lua').read_text()
+    lua.globals().organization_source=(ROOT/'organization.lua').read_text()
+    lua.globals().organization_view_source=(ROOT/'organization_view.lua').read_text()
+    lua.globals().organization_run_source=(ROOT/'organization_run.lua').read_text()
     lua.execute('''
     package.preload.common=function() end; T=function(t) return t end
     package.preload.inventory_model=function() return model end
@@ -76,6 +79,9 @@ def addon_setup():
     package.preload.currency=function() return assert(loadstring(currency_source))() end
     package.preload.customization=function() return assert(loadstring(custom_source))() end
     package.preload.ownership_view=function() return assert(loadstring(ownership_source))() end
+    package.preload.organization=function() return assert(loadstring(organization_source))() end
+    package.preload.organization_view=function() return assert(loadstring(organization_view_source))() end
+    package.preload.organization_run=function() return assert(loadstring(organization_run_source))() end
     package.preload.bag_access=function() return access_module end
     player={Name='Alice',ServerId=100}; zoning=0; zone=1; callbacks={}; saves=0
     settingsmock={logged_in=true,name='Alice',server_id=100}
@@ -101,7 +107,11 @@ def addon_setup():
     package.preload.imgui=function() return {
       CollapsingHeader=function() return false end, SetNextWindowBgAlpha=function() end,
       PushStyleColor=function() end, PopStyleColor=function() end, ProgressBar=function(value,size,label) ui[#ui+1]=label; assert(value>=0 and value<=1) end,
-      GetContentRegionAvail=function() return 500,300 end,
+      GetContentRegionAvail=function() return 500,content_height or 300 end,
+      GetFrameHeightWithSpacing=function() return 24 end, GetTextLineHeightWithSpacing=function() return 20 end,
+      IsItemHovered=function() return false end, SetTooltip=function() end,
+      GetCursorPosX=function() return 0 end, CalcTextSize=function(text) return #text*8,20 end,
+      TextColored=function(color,text) colored=colored or {}; colored[text]=color; ui[#ui+1]=text end,
       TableSetupScrollFreeze=function(cols,rows) assert(cols==0 and rows==1) end,
       SetNextWindowSize=function(size,cond) next_window_size=size; next_window_cond=cond end, SetNextItemWidth=function(width) item_width=width end,
       Begin=function(name,visible) if close_monitor and name=='InvMaster Bags###InvMasterBagMonitor' then visible[1]=false; close_monitor=false end; return true end, End=function() end,
@@ -112,16 +122,16 @@ def addon_setup():
       BeginCombo=function(label,preview) if label=='Move to' then assert(item_width==260); move_preview=preview end; combo_active=(open_combo==label); return combo_active end, EndCombo=function() combo_active=false end, Selectable=function(label) last_item=label; if combo_active then combo_options[label]=true end; ui[#ui+1]=label:gsub('##.*',''); if click==label then click=nil; return true end; return false end,
       IsItemClicked=function(button) assert(button==1); if right_click==last_item then right_click=nil; return true end; return false end,
       OpenPopup=function(id) popup=id end, BeginPopup=function(id) assert(next_window_size[1]==440 and next_window_size[2]==0 and next_window_cond==ImGuiCond_Always); if popup==id then popups=(popups or 0)+1; return true end; return false end, EndPopup=function() popups=popups-1 end, CloseCurrentPopup=function() popup=nil end,
-      Button=function(label) if click==label then click=nil; return true end; return false end,
+      Button=function(label) buttons[label]=true; if click==label then click=nil; return true end; return false end,
       Checkbox=function(label,value) if toggle_checkbox==label then value[1]=not value[1]; toggle_checkbox=nil; return true end; return false end, SameLine=function() end, Separator=function() end,
       BeginTabBar=function() return true end, EndTabBar=function() end,
-      BeginTabItem=function(name) tab_names[name]=true; if (active_tab and name~=active_tab and not (active_tab=='Currency' and name==(currency_subtab or 'Crystals'))) or (not active_tab and (name=='Move' or name=='Ownership' or name=='Customization' or name=='Currency')) then return false end; tabs=tabs+1; return true end, EndTabItem=function() tabs=tabs-1 end,
-      BeginChild=function() child=child+1; return not hide_child end, EndChild=function() child=child-1 end,
-      BeginTable=function(name,_,flags,size) assert(size[2]==300); if name=='MovePanes' then assert(flags==1) elseif name=='Items' or name=='Ownership' or name:find('MoveItems',1,true) then assert(flags==33554443) else assert(flags==33554432) end; tables=tables+1; return true end, EndTable=function() tables=tables-1 end,
-      TableSetupColumn=function() end, TableHeadersRow=function() end, TableNextRow=function() end, TableNextColumn=function() end,
+      BeginTabItem=function(name) tab_names[name]=true; if (active_tab and name~=active_tab and not (active_tab=='Currency' and name==(currency_subtab or 'Crystals')) and not (active_tab=='Organize' and name==(org_subtab or 'Item rules'))) or (not active_tab and (name=='Move' or name=='Ownership' or name=='Customization' or name=='Currency' or name=='Organize')) then return false end; tabs=tabs+1; return true end, EndTabItem=function() tabs=tabs-1 end,
+      BeginChild=function(name,size) child_sizes=child_sizes or {}; child_sizes[name]=size; child=child+1; return not hide_child end, EndChild=function() child=child-1 end,
+      BeginTable=function(name,_,flags,size) assert(size[2]==300); if name=='MovePanes' then assert(flags==1) elseif name=='Items' or name=='OwnershipV2' or name:find('MoveItems',1,true) then assert(flags==33554443) else assert(flags==33554432) end; tables=tables+1; return true end, EndTable=function() tables=tables-1 end,
+      TableSetupColumn=function(name,flags,width,id) column_widths=column_widths or {}; column_widths[name]=width end, TableHeadersRow=function() end, TableNextRow=function() end, TableNextColumn=function() end,
     } end
     function cmd(s) local e={command=s}; callbacks.command(e); return e.blocked end
-    function tick(t) now=t; ui={}; combo_options={}; tab_names={}; callbacks.d3d_present(); assert(child==0 and tabs==0 and tables==0 and (popups or 0)==0) end
+    function tick(t) now=t; ui={}; buttons={}; combo_options={}; tab_names={}; callbacks.d3d_present(); assert(child==0 and tabs==0 and tables==0 and (popups or 0)==0) end
     function shown(s) for _,v in ipairs(ui) do if v:find(s,1,true) then return true end end; return false end
     ''')
     lua.execute((ROOT/'invmaster.lua').read_text())
@@ -566,5 +576,241 @@ for item_type in [11,10,12,14]:
       assert(#moves==0 and mover.message:find('Furniture'))
     end
     """)
+
+# Clearing a bag filter preserves search/category choices and sends no actions.
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); assert(not shown('Showing:'))
+open_combo='Location'; click='Inventory'; tick(4); open_combo=nil
+assert(shown('Showing: Inventory only') and shown('2 matching slots'))
+current_profile.categories.other=false
+edit_search={label='##search',value='knuckles'}; tick(5)
+local saved=saves; click='Show all bags'; tick(6); tick(6.1)
+assert(not shown('Showing:') and shown('0 matching slots'))
+assert(current_profile.categories.other==false and saves==saved and #sent==0)
+current_profile.categories.other=true; tick(7)
+assert(shown('2 matching slots') and not shown('Copper Ore'))
+""")
+l=addon_setup(); run(l, """
+cmd('/im monitor'); tick(0); tick(3); click='Safe##Monitor1'; tick(4); tick(5)
+assert(shown('Showing: Safe only') and shown('1 matching slots'))
+click='Show all bags'; tick(6); tick(7)
+assert(not shown('Showing:') and shown('3 matching slots') and #sent==0)
+""")
+
+# Popup preflight exposes failures without offering a Move action or sending packets.
+for mutation, reason in [
+    ("equipment[0]=7*256+1", 'Unequip'),
+    ("slots[7][1].Flags=5", 'locked'),
+    ("resource_data[102].Type=10", 'Furniture'),
+    ("resource_data[102].StackSize=nil", 'resource data'),
+    ("player_status=4", 'idle'),
+]:
+    l=move_setup(); l.globals().expected_reason=reason
+    run(l, mutation+"; cmd('/im refresh'); tick(5); right_click='Copper Ore##7_1'; tick(6); assert(shown(expected_reason) and not buttons['Move item'] and #sent==0)")
+l=move_setup(); run(l, "equipment[0]=7*256+1; tick(5); assert(shown('Unequip') and not buttons['Move item']); equipment[0]=0; tick(6); assert(buttons['Move item'] and not shown('Unequip') and #sent==0)")
+l=move_setup(); run(l, "capacity[0]=2; cmd('/im refresh'); tick(5); assert(shown('free slot') and not buttons['Move item']); open_combo='Unavailable destinations'; tick(6); assert(shown('Inventory: Destination needs at least one free slot.') and #sent==0)")
+l=move_setup(); run(l, "capacity[6]=1; counts[6]=1; slots[6]={[1]=slots[0][1]}; cmd('/im refresh'); tick(5); open_combo='Move to'; tick(6); assert(shown('Sack: Destination needs at least one free slot.') and not combo_options.Sack); assert(shown('Safe:') and shown('Container access is unavailable') and not combo_options.Safe and #sent==0)")
+# Preview cannot authorize a stale item: the sender still re-reads it on click.
+l=move_setup(); run(l, "assert(buttons['Move item']); slots[7][1].Flags=5; click='Move item'; tick(4); tick(4.1); assert(#sent==0 and shown('Selected slot changed'))")
+# Old successes disappear on a new selection; current uncertain operations cannot be cleared.
+l=stack_setup(); run(l, "slots[7][1].Count=4; slots[7][2]=nil; counts[7]=1; tick(5); tick(5.25); assert(shown('Last stacking action: Stacks combined')); equipment[0]=7*256+1; right_click='Copper Ore##7_1'; tick(6); tick(6.1); assert(shown('Unequip') and not shown('Stacks combined') and #sent==1)")
+l=stack_setup(); run(l, "slots[7][1].Count=4; slots[7][2]=nil; counts[7]=1; tick(5); tick(5.25); assert(buttons['Clear result']); click='Clear result'; tick(6); tick(7); assert(not shown('Last stacking action:') and #sent==1)")
+l=stack_setup(); run(l, "tick(13); assert(shown('Current stacking action: Stacking not confirmed') and not buttons['Clear result']); click='Clear result'; right_click='Copper Ore##0_2'; tick(14); assert(shown('Stacking not confirmed') and #sent==1)")
+
+def organization_setup():
+    l=addon_setup()
+    run(l, """
+    org=require('organization'); rules=org.normalize(nil)
+    require('category_data')[102]='materials' -- Synthetic Copper Ore fixture ID.
+    capacity[6]=80; counts[6]=0; slots[6]={}
+    capacity[7]=80; counts[7]=1; slots[7]={[1]={Id=102,Count=3,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}}
+    data=model.scan(inv,resources)
+    env={ready=true,access={[0]=true,[6]=true,[7]=true},equipped=function() return false end}
+    """)
+    return l
+
+l=organization_setup(); run(l, "local before=org.signature(data); local p=org.plan(data,rules,env); assert(#p.moves==0 and #p.blocked==0 and #sent==0 and org.signature(data)==before)")
+l=organization_setup(); run(l, "rules.categories.materials=6; local p=org.plan(data,rules,env); assert(#p.moves==2 and p.moves[1].count==12 and p.moves[2].count==3 and p.moves[2].via_inventory); assert(data[7].free==80 and #sent==0)")
+l=organization_setup(); run(l, "rules.categories.materials=6; rules.items['102']={keep=14,destination=6}; local p=org.plan(data,rules,env); assert(#p.moves==1 and p.moves[1].count==2 and p.moves[1].destination==0 and #p.blocked==1)")
+l=organization_setup(); run(l, "rules.items['102']={keep=5,destination=6}; local p=org.plan(data,rules,env); assert(#p.moves==2 and p.moves[1].count==7 and p.moves[2].count==3)")
+l=organization_setup(); run(l, "rules.categories.materials=6; rules.items['102']={destination=7}; local p=org.plan(data,rules,env); assert(#p.moves==1 and p.moves[1].destination==7)")
+l=organization_setup(); run(l, "rules.categories.materials=6; rules.items['102']={destination=-1}; local p=org.plan(data,rules,env); assert(#p.moves==0)")
+l=organization_setup(); run(l, "rules.categories.materials=6; rules.items['102']={protected=true,keep=99,destination=7}; local p=org.plan(data,rules,env); assert(#p.moves==0 and #p.blocked==0 and p.protected==1)")
+l=organization_setup(); run(l, "rules.categories.materials=6; data[7].free=1; local p=org.plan(data,rules,env); assert(#p.moves==1 and #p.blocked==1 and data[7].free==1)")
+l=organization_setup(); run(l, "rules.items['102']={keep=15}; data[1].free=0; local p=org.plan(data,rules,env); assert(#p.moves==0 and #p.blocked==2)")
+l=organization_setup(); run(l, "rules.categories.materials=6; env.access[6]=nil; local p=org.plan(data,rules,env); assert(#p.moves==0 and #p.blocked==2)")
+l=organization_setup(); run(l, "rules.categories.materials=6; env.equipped=function() return true end; local p=org.plan(data,rules,env); assert(#p.moves==0 and p.blocked[1]:find('Unequip'))")
+l=organization_setup(); run(l, "rules.items['102']={keep=20}; local p=org.plan(data,rules,env); assert(#p.moves==1 and p.moves[1].count==3 and p.blocked[1]:find('short by 5'))")
+l=organization_setup(); run(l, "rules.items['999']={name='Missing',keep=2}; local p=org.plan(data,rules,env); assert(#p.moves==0 and p.blocked[1]:find('not found'))")
+l=organization_setup(); run(l, "env.ready=false; assert(#org.plan(data,rules,env).moves==0 and #org.plan(data,rules,env).blocked==1); assert(#org.plan(nil,rules,env).blocked==1)")
+l=organization_setup(); run(l, "local input={items={['102']={keep=0,protected=true,destination=0},bad={keep=2},['103']={keep=0/0}},categories={materials=6,other=17,invalid=6}}; local n=org.normalize(input); assert(n.items['102'].keep==0 and n.items['102'].protected and n.items['102'].destination==nil and not n.items.bad and n.items['103'].keep==nil and n.categories.materials==6 and n.categories.other==nil and not n.categories.invalid); n.items['102'].keep=5; assert(input.items['102'].keep==0)")
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); active_tab='Organize'; tick(4)
+click='Copper Ore##OrgItem102'; tick(4.1); toggle_checkbox='Leave this item untouched##Org'; tick(4.2)
+click='Apply item rule'; tick(4.3); assert(current_profile.organization.items['102'].protected and saves==1)
+org_subtab='Preview'; click='View organization plan'; tick(4.4); assert(shown('1 protected item types') and #sent==0)
+cmd('/im refresh'); tick(5); assert(shown('1 protected item types'))
+slots[0][2].Count=11; cmd('/im refresh'); tick(6); assert(not shown('proposed moves'))
+local alice=current_profile; local bob={}; switch_profile(bob); cmd('/im'); tick(7)
+assert(not bob.organization.items['102'] and alice.organization.items['102'].protected and #sent==0)
+""")
+
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); active_tab='Organize'; org_subtab='Category rules'; tick(4)
+open_combo='Category##Org'; click='Materials##OrgCategory'; tick(4.1); open_combo='Category storage##Org'
+click='Sack##Category storage##Org'; tick(4.2); open_combo=nil
+assert(current_profile.organization.categories.materials==nil)
+click='Apply category rule'; tick(4.3); assert(current_profile.organization.categories.materials==6 and saves==1)
+org_subtab='Item rules'; click='Copper Ore##OrgItem102'; tick(4.4)
+toggle_checkbox='Keep a quantity in Inventory##Org'; tick(4.5); edit_interval=5; tick(4.6)
+click='Apply item rule'; tick(4.7); assert(current_profile.organization.items['102'].keep==5 and saves==2)
+click='Remove item rule'; tick(4.8); assert(not current_profile.organization.items['102'] and saves==3 and #sent==0)
+assert(current_profile.organization.categories.materials==6)
+""")
+
+l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); active_tab='Ownership'; tick(4); assert(column_widths.Item==1 and column_widths['Locations / Details']==1.4 and column_widths.Total==50 and column_widths.Bags==40); assert(shown('Inventory: 1 | Safe: 1') and #sent==0)")
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); active_tab='Organize'; content_height=600; tick(4)
+assert(child_sizes.OrganizationItems[2]==600)
+click='Copper Ore##OrgItem102'; tick(4.1); tick(4.2)
+assert(child_sizes.OrganizationItems[2]>250 and child_sizes.OrganizationItems[2]<600 and child_sizes.OrganizationEditor)
+content_height=300; tick(4.3); assert(child_sizes.OrganizationItems[2]>=80 and child_sizes.OrganizationItems[2]<200)
+assert(saves==0 and #sent==0)
+""")
+
+def organization_run_setup():
+    l=organization_setup()
+    run(l, """
+    owner='Alice:100:1'; env.key=owner; external_busy=false; changes=0; stack_sent={}
+    rules.categories.materials=6
+    runner=require('organization_run').new({now=function() return now end,
+      context=function() return owner end, rules=function() return rules end,
+      access=function() return env.access end, equipped=function(...) return env.equipped(...) end,
+      busy=function() return external_busy end, scan=function() return model.scan(inv,resources) end,
+      changed=function() changes=changes+1 end,
+      send_stack=function(p) stack_sent[#stack_sent+1]=p; if stack_error then error('uncertain stack send') end end,
+      send=function(p) sent[#sent+1]=p; if send_error then error('uncertain send') end end})
+    function preview() return org.plan(model.scan(inv,resources),rules,env) end
+    function step() now=now+0.5; runner:tick() end
+    function deliver()
+      local p=sent[#sent]; local from,to,index,q=p[9],p[10],p[11],p[5]+p[6]*256
+      local item=slots[from][index]; assert(item and item.Count>=q)
+      local target=1; while slots[to][target] do target=target+1 end
+      local copy={}; for k,v in pairs(item) do copy[k]=v end; copy.Count=q
+      slots[to][target]=copy; counts[to]=counts[to]+1
+      item.Count=item.Count-q; if item.Count==0 then slots[from][index]=nil; counts[from]=counts[from]-1 end
+    end
+    """)
+    return l
+
+# Execution is explicit and sequential, including both legs of a storage route.
+l=organization_run_setup(); run(l, """
+local plan=preview(); assert(#sent==0 and runner:start(plan) and #sent==0)
+assert(not runner:start(plan)); step(); assert(#sent==1 and sent[1][9]==0)
+step(); assert(#sent==1); deliver(); step(); assert(#sent==1); step(); assert(#sent==2 and sent[2][9]==7 and sent[2][10]==0)
+deliver(); step(); step(); assert(#sent==3 and sent[3][9]==0 and sent[3][10]==6)
+deliver(); step(); step(); assert(not runner:busy() and runner.message:find('2/2 moves confirmed') and changes==2)
+step(); assert(#sent==3)
+""")
+for mutation in ["slots[0][2].Count=11", "rules.items['102']={protected=true}", "owner='Bob'", "external_busy=true", "env.access[6]=nil"]:
+    l=organization_run_setup(); run(l, "local p=preview(); "+mutation+"; assert(not runner:start(p) and #sent==0)")
+for mutation in ["runner:cancel()", "rules.items['102']={protected=true}", "owner=nil", "external_busy=true", "env.access[6]=nil", "slots[0][2].Flags=5", "slots[0][2].Extra=string.rep('x',28)", "slots[0][2].Count=11", "env.equipped=function() return true end", "capacity[6]=0"]:
+    l=organization_run_setup(); run(l, "assert(runner:start(preview())); "+mutation+"; step(); assert(not runner:busy() and #sent==0)")
+for mutation in ["runner:cancel()", "rules.items['102']={protected=true}", "env.access[6]=nil", "external_busy=true"]:
+    l=organization_run_setup(); run(l, "assert(runner:start(preview())); step(); "+mutation+"; step(); assert(runner:busy() and #sent==1); deliver(); step(); step(); assert(not runner:busy() and #sent==1)")
+# Stop/change while the first leg is in flight leaves received items in Inventory.
+for mutation in ["runner:cancel()", "rules.items['102']={protected=true}", "env.access[6]=nil"]:
+    l=organization_run_setup(); run(l, "rules.items['102']={keep=12,destination=6}; assert(runner:start(preview())); step(); assert(sent[1][9]==7); "+mutation+"; deliver(); step(); step(); assert(not runner:busy() and #sent==1 and slots[0][3].Count==3)")
+# Timeout locks persist; even a confirmation on the deadline must not continue.
+for mode in ['timeout_then_deliver','confirm_on_deadline']:
+    l=organization_run_setup(); run(l, "assert(runner:start(preview())); step()")
+    if mode=='timeout_then_deliver':
+        run(l, "now=20; runner:tick(); runner:tick(); assert(runner:busy() and #sent==1); deliver(); step(); step()")
+    else:
+        run(l, "deliver(); now=8.25; runner:tick(); now=8.5; runner:tick()")
+    run(l, "assert(not runner:busy() and #sent==1 and runner.message:find('Stopped'))")
+l=organization_run_setup(); run(l, "assert(runner:start(preview())); step(); owner=nil; deliver(); step(); step(); assert(runner:busy() and #sent==1); owner='Alice:100:1'; step(); step(); assert(not runner:busy() and #sent==1)")
+l=organization_run_setup(); run(l, "send_error=true; assert(runner:start(preview())); step(); step(); step(); assert(runner:busy() and #sent==1); runner:cancel(); deliver(); step(); step(); assert(not runner:busy() and #sent==1)")
+l=organization_run_setup(); run(l, "assert(runner:start(preview())); step(); slots[7][1].Id=101; deliver(); step(); step(); assert(not runner:busy() and #sent==1 and runner.message:find('changed or is blocked'))")
+l=organization_run_setup(); run(l, "capacity[0]=80; for i=3,53 do slots[0][i]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)} end; counts[0]=53; local p=preview(); assert(#p.moves>50 and not runner:start(p) and #sent==0 and runner.message:find('50 transfers'))")
+# Saved rule markers are green; draft changes alone do not create a marker.
+l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); active_tab='Organize'; tick(4); assert(not colored or not colored['[rule]']); current_profile.organization.items['102']={name='Copper Ore',protected=true}; tick(4.1); assert(colored['[rule]'][2]==1 and colored['[rule]'][1]<0.5 and #sent==0)")
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={destination=5}
+active_tab='Organize'; org_subtab='Preview'; click='View organization plan'; tick(4)
+assert(buttons['Run organization'] and #sent==0); tick(4.1); assert(#sent==0)
+click='Run organization'; tick(4.2); tick(4.3); assert(#sent==1 and buttons['Stop organization'])
+cmd('/im organizestop'); tick(20); assert(#sent==1 and shown('Current organization:') and not buttons['Clear result'])
+""")
+
+# Preserve the actual stop reason while an already-sent first leg confirms.
+for cause, expected in [
+    ("runner:cancel('Stopped by you. No further moves sent.'); now=20; runner:tick()", 'Stopped by you'),
+    ("now=20; runner:tick()", 'confirmation timed out'),
+    ("owner=nil; step(); owner='Alice:100:1'", 'player context changed'),
+]:
+    l=organization_run_setup()
+    run(l, "rules.items['102']={keep=12,destination=6}; assert(runner:start(preview())); step(); "+cause+"; deliver(); step(); step(); assert(not runner:busy() and #sent==1 and runner.message:find('reached Inventory') and runner.message:find('"+expected+"'))")
+
+def organization_stacking_setup(two_bags=False):
+    l=organization_run_setup()
+    if two_bags:
+        run(l, """
+        resource_data[103]={Name={[1]='Synthetic Ore'},StackSize=99,Type=1}
+        slots[0][3]={Id=103,Count=2,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3
+        slots[7][2]={Id=103,Count=3,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[7]=2
+        rules.items['103']={destination=7}
+        """)
+    run(l, """
+    function finish_moves()
+      step()
+      local handled=0
+      while runner.active and runner.active.done<#runner.active.moves do
+        assert(#stack_sent==0 and #sent==handled+1)
+        deliver(); handled=handled+1; step(); step()
+        assert(handled<=4)
+      end
+    end
+    function combine(bag)
+      local first
+      for index=1,80 do
+        local item=slots[bag][index]
+        if item then
+          if first then assert(first.Id==item.Id); first.Count=first.Count+item.Count; slots[bag][index]=nil; counts[bag]=counts[bag]-1
+          else first=item end
+        end
+      end
+    end
+    """)
+    return l
+
+l=organization_stacking_setup(); run(l, "assert(runner:start(preview())); finish_moves(); assert(not runner:busy() and #stack_sent==0)")
+l=organization_stacking_setup(); run(l, "assert(runner:start(preview(),true)); finish_moves(); assert(#sent==3 and #stack_sent==1 and stack_sent[1][5]==6 and runner:busy()); step(); assert(#stack_sent==1); combine(6); step(); step(); assert(not runner:busy() and #stack_sent==1 and runner.message:find('1 bags confirmed'))")
+l=organization_stacking_setup(True); run(l, "assert(runner:start(preview(),true)); finish_moves(); assert(#sent==4 and #stack_sent==1 and stack_sent[1][5]==6); combine(6); step(); step(); assert(#stack_sent==2 and stack_sent[2][5]==7); combine(7); step(); step(); assert(not runner:busy() and runner.message:find('2 bags confirmed'))")
+for cause in ["runner:cancel('Stopped by you. No further moves sent.')", "now=20", "rules.items['102']={protected=true}", "env.access[7]=nil", "external_busy=true"]:
+    l=organization_stacking_setup(True)
+    run(l, "assert(runner:start(preview(),true)); finish_moves(); "+cause+"; step(); assert(runner:busy() and #stack_sent==1); combine(6); step(); step(); assert(not runner:busy() and #stack_sent==1)")
+l=organization_stacking_setup(True); run(l, "assert(runner:start(preview(),true)); finish_moves(); owner=nil; step(); combine(6); step(); assert(runner:busy()); owner='Alice:100:1'; step(); step(); assert(not runner:busy() and #stack_sent==1)")
+l=organization_stacking_setup(True); run(l, "stack_error=true; assert(runner:start(preview(),true)); finish_moves(); step(); step(); assert(runner:busy() and #stack_sent==1); runner:cancel(); combine(6); step(); step(); assert(not runner:busy() and #stack_sent==1)")
+l=organization_stacking_setup(); run(l, "assert(runner:start(preview(),true)); step(); runner:cancel(); deliver(); step(); step(); assert(not runner:busy() and #sent==1 and #stack_sent==0)")
+l=organization_stacking_setup(); run(l, "rules.items['101']={protected=true}; slots[6][1]=slots[1][4]; counts[6]=1; assert(runner:start(preview(),true)); finish_moves(); step(); assert(not runner:busy() and #stack_sent==0 and runner.message:find('1 bags skipped'))")
+l=organization_stacking_setup(); run(l, "rules.items['102']={keep=14}; assert(runner:start(preview(),true)); finish_moves(); assert(#stack_sent==1 and stack_sent[1][5]==0)")
+# No combinable stacks: complete without sending a native stacking request.
+l=organization_stacking_setup(); run(l, "slots[7]={}; counts[7]=0; assert(runner:start(preview(),true)); finish_moves(); step(); assert(not runner:busy() and #stack_sent==0)")
+# The checkbox is per preview, does not save settings, and uses the stacking packet type.
+l=addon_setup(); run(l, """
+cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={name='Copper Ore',destination=5}
+slots[5][1]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[5]=1
+cmd('/im refresh'); tick(3.5); active_tab='Organize'; org_subtab='Preview'
+click='View organization plan'; tick(4); assert(not shown('After all moves finish'))
+toggle_checkbox='Stack destination bags after this run'; tick(4.1); assert(shown('After all moves finish'))
+click='View organization plan'; tick(4.2); assert(not shown('After all moves finish'))
+toggle_checkbox='Stack destination bags after this run'; tick(4.3); click='Run organization'; tick(4.4); tick(4.5)
+assert(#sent==1 and sent[1].id==0x029)
+slots[5][2]=slots[0][2]; counts[5]=2; slots[0][2]=nil; counts[0]=1
+tick(5); tick(5.5); assert(#sent==2 and sent[2].id==0x03A and sent[2].data[5]==5)
+click='Stop organization'; tick(5.6); slots[5][1].Count=13; slots[5][2]=nil; counts[5]=1
+tick(6); tick(6.5); assert(#sent==2 and shown('Stopped by you') and saves==0)
+""")
 
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

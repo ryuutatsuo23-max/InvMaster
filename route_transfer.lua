@@ -44,6 +44,12 @@ function M.new(env)
         env.changed();
     end
     function self:reset() leg:reset(); self.plan=nil; self.pending=nil; self.message=nil; completed=false end
+    function self:cancel(reason)
+        if self.plan then
+            self.plan.cancelled=true;
+            self.plan.cancel_reason=self.plan.cancel_reason or reason or 'Continuation cancelled. No further moves sent.';
+        end
+    end
     function self:start(choice,destination,quantity)
         if self.pending then return false end
         local two=choice and choice.bag~=0 and destination~=nil and destination~=0 and choice.bag~=destination;
@@ -70,8 +76,12 @@ function M.new(env)
         if not self.pending then return end
         local ok=pcall(function()
             local plan=self.plan;
-            if plan and plan.step==1 and (env.context()~=plan.key or env.now()>=leg.pending.deadline) then
-                plan.cancelled=true;
+            if plan and plan.step==1 then
+                if env.context()~=plan.key then
+                    self:cancel('Automatic continuation was cancelled: player context changed or is unavailable. No further moves sent.');
+                elseif env.now()>=leg.pending.deadline then
+                    self:cancel('Automatic continuation was cancelled: confirmation timed out. No further moves sent.');
+                end
             end
             local current=leg.pending;
             completed=false; leg:tick(); sync();
@@ -81,11 +91,12 @@ function M.new(env)
                 self.message=('Moved %d x %s: %s to %s via Inventory.'):format(plan.quantity,plan.item.name,transfer.bags[plan.source],transfer.bags[plan.destination]);
                 self.plan=nil; env.changed(); if env.completed then env.completed(plan.destination) end; return;
             end
-            if plan.cancelled then stop('Automatic continuation was cancelled after a delay or context change.'); return end
+            if plan.cancelled then stop(plan.cancel_reason); return end
             local data=env.scan();
             local choice=M.received(plan.before,data and data[1],plan.item,plan.quantity);
             if not choice then stop('Could not identify one received stack safely; no second move sent.'); return end
             if env.context()~=plan.key then stop('Player context changed; no second move sent.'); return end
+            if env.continue_route and not env.continue_route() then stop('Organization stopped or rules changed; no second move sent.'); return end
             -- Advance before sending: uncertain API outcomes must not repeat this step.
             plan.step=2;
             if not leg:start(choice,plan.destination,plan.quantity) then

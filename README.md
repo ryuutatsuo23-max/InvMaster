@@ -6,7 +6,7 @@ and manage crystals, seals and crests stored with NPCs.
 
 ## Install
 
-1. Download **InvMaster-v0.14.0.zip** from [Releases](https://github.com/ryuutatsuo23-max/InvMaster/releases/latest).
+1. Download the latest **InvMaster ZIP** from [Releases](https://github.com/ryuutatsuo23-max/InvMaster/releases/latest).
 2. Extract the `invmaster` folder into your Ashita `addons` folder.
 3. In game, run `/addon load invmaster`, then `/im` to open the window.
 
@@ -35,7 +35,31 @@ The window starts hidden. `/invmaster` and the old `/fms` alias also work.
 - **Prepare crafting materials:** optional CraftMaster integration retrieves missing ingredients through InvMaster. Preparation does not start crafting.
 
 Filters, favourites, collections and monitor preferences save per character.
+When Items is filtered to one bag, **Show all bags** clears that filter without changing your search or categories.
 Transfers between two storage bags pass through Inventory, so leave space there too.
+The move popup explains blocked items and unavailable destinations before you act.
+Status lines distinguish current actions from the last result; **Clear result** dismisses old messages.
+
+## Organize your bags (v0.17.0)
+
+Open **Organize** to set quantities to keep in Inventory, choose storage bags,
+or mark an item **Leave this item untouched**. Category rules provide defaults;
+individual item destinations override them. Click **Apply** to save a rule, then
+**View organization plan** to see proposed moves and anything blocking them.
+
+Saved item rules have a green **[rule]** marker. Click **Run organization** to
+carry out the reviewed moves, one confirmed transfer at a time. Plans are limited
+to 50 transfer steps. **Stop organization** (or `/im organizestop`) prevents
+further sends; a move already sent still needs confirmation.
+
+Optionally tick **Stack destination bags after this run** to combine partial
+stacks after all moves finish. It starts off for each new preview and skips bags
+containing items marked **Leave this item untouched**.
+
+Rules start empty, save per character and cover all copies of an item ID.
+Protection applies to organization, not your existing manual transfer controls.
+Plans clear when bag contents or applied rules change. Nothing runs automatically.
+See [organization details](docs/organization.md).
 
 ## Crystals, seals and crests
 

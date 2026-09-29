@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.14.0';
+addon.version = '0.17.0';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -13,6 +13,8 @@ local bag_access = require('bag_access').new();
 local ownership_view = require('ownership_view').new();
 local customization = require('customization');
 local custom_view = customization.new();
+local organization=require 'organization';
+local organization_view=require('organization_view').new();
 local crystal_trace=require('crystal_trace').new({
     now=os.clock,
     name=function(index) return AshitaCore:GetMemoryManager():GetEntity():GetName(index) end,
@@ -48,9 +50,21 @@ local shami_controller;
 local withdraw_module=require 'withdraw';
 local withdrawer;
 local mover,sorter,sort_request;
-local preparer;
-local function other_busy() return (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
+local preparer,organizer;
+local function base_busy() return (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
+local function other_busy() return base_busy() or (organizer and organizer:busy()) end
 local function busy() return other_busy() or (preparer and preparer:busy()) end
+local function clear_action_messages()
+    if busy() then return end -- Never hide an uncertain operation's warning or lock.
+    for _,controller in ipairs({mover,sorter,withdrawer,preparer,crystal_withdrawer,shami_controller,organizer}) do
+        controller.message=nil;
+    end
+end
+local function action_message(label,controller,active)
+    if controller.message then
+        imgui.TextWrapped((active and 'Current ' or 'Last ')..label..': '..controller.message);
+    end
+end
 local choice, destination;
 local quantity={1};
 local window, query = {false}, {''};
@@ -60,6 +74,8 @@ local selected, snapshot, last_read, next_read;
 local context_key;
 local status = 'Waiting for character data.';
 local function reset()
+    if organizer then organizer:cancel('Stopped: character context reset. No further moves sent.') end
+    organization_view:invalidate();
     if preparer then preparer:cancel() end
     snapshot, last_read, selected, context_key = nil, nil, nil, nil;
     next_read = 0;
@@ -93,6 +109,8 @@ local function apply_profile(data)
     data.categories=categories.normalize(data.categories);
     data.monitor=bag_monitor.normalize(data.monitor);
     data.customization=customization.normalize(data.customization);
+    data.organization=organization.normalize(data.organization);
+    organization_view:reset(data.organization);
     window[1]=false; query[1]=''; reset();
 end
 local function ready()
@@ -157,7 +175,7 @@ crystal_withdrawer=require('crystal_withdraw').new({
     changed=function() next_read=0; currency_refresh_due=true end,
 });
 local crystal_ui={busy=busy,target=crystal_target,
-    start=function(element,count) if not busy() then crystal_withdrawer:start(element,count) end end};
+    start=function(element,count) if not busy() then clear_action_messages(); crystal_withdrawer:start(element,count) end end};
 local function shami_target(idle,pinned,force) return crystal_target(idle,'Shami',pinned,force) end
 shami_controller=require('shami').new({
     now=os.clock,key=crystal_key,target=function(idle,pinned) return shami_target(idle,pinned,idle) end,
@@ -169,7 +187,7 @@ shami_controller=require('shami').new({
     changed=function() next_read=0; currency_refresh_due=true end,
 });
 local shami_ui={busy=busy,target=shami_target,
-    start=function(mode,index,count) if not busy() then shami_controller:start(mode,index,count) end end};
+    start=function(mode,index,count) if not busy() then clear_action_messages(); shami_controller:start(mode,index,count) end end};
 local function current_access()
     local key=transfer_context();
     if not key then return {} end
@@ -213,17 +231,25 @@ prepare_env.reply=function(token,code)
     AshitaCore:GetChatManager():QueueCommand(-1,'/cm prepare_result '..token..' '..code);
 end;
 preparer=require('prepare_bridge').new(prepare_env);
+local organization_env={}; for k,v in pairs(withdraw_env) do organization_env[k]=v end
+organization_env.rules=function() return profile and profile.organization or {} end;
+organization_env.busy=function() return base_busy() or preparer:busy() end;
+organization_env.send_stack=function(packet) return AshitaCore:GetPacketManager():AddOutgoingPacket(0x03A,packet); end;
+organizer=require('organization_run').new(organization_env);
+local function save_organization()
+    organizer:cancel('Stopped: saved rules changed. No further moves sent.'); settings.save();
+end
 local withdraw_ui={
     available=function(id) local _,total=withdraw_module.sources(snapshot,id,withdraw_env); return total end,
     busy=busy,
-    start=function(id,count) if not busy() then withdrawer:start(id,count) end end,
+    start=function(id,count) if not busy() then clear_action_messages(); withdrawer:start(id,count) end end,
 };
 local function select_item(row)
     choice={bag=row.bag.id};
     for key,value in pairs(row.item) do choice[key]=value end
     quantity[1]=1;
     destination=row.bag.id==0 and 6 or 0;
-    mover.message=nil;
+    clear_action_messages();
 end
 local function render_transfer()
     if not choice then
@@ -238,14 +264,23 @@ local function render_transfer()
     end
     if busy() then return end
     local access=current_access();
-    local options={}; local selected_available=false;
+    local options,unavailable={},{}; local selected_available=false;
     for id=0,16 do
-        if transfers.plan_route(snapshot,choice,id,access) then
+        local allowed,reason=transfers.plan_route(snapshot,choice,id,access);
+        if allowed then
             options[#options+1]=id;
             if destination==id then selected_available=true end
+        elseif transfers.bags[id] and id~=choice.bag then
+            unavailable[#unavailable+1]={id=id,reason=reason};
         end
     end
-    if not selected_available then destination=nil end
+    if not selected_available then
+        if destination then
+            local _,reason=transfers.plan_route(snapshot,choice,destination,access);
+            imgui.TextWrapped('Cannot move to '..(transfers.bags[destination] or 'that bag')..': '..(reason or 'Route unavailable.'));
+        end
+        destination=nil;
+    end
     if #options==0 then
         local key,reason=transfer_context();
         if not key then imgui.TextWrapped(reason);
@@ -258,6 +293,12 @@ local function render_transfer()
         else
             imgui.TextWrapped('No accessible destination with free space for this item.');
         end
+        if imgui.BeginCombo('Unavailable destinations','View reasons') then
+            for _,entry in ipairs(unavailable) do
+                imgui.TextWrapped(transfers.bags[entry.id]..': '..entry.reason);
+            end
+            imgui.EndCombo();
+        end
         if imgui.Button('Clear selection') then choice=nil; imgui.CloseCurrentPopup() end
         return;
     end
@@ -265,6 +306,10 @@ local function render_transfer()
     if imgui.BeginCombo('Move to', transfers.bags[destination] or 'Choose container') then
         for _, id in ipairs(options) do
             if imgui.Selectable(transfers.bags[id], destination==id) then destination=id end
+        end
+        imgui.Separator();
+        for _,entry in ipairs(unavailable) do
+            imgui.TextWrapped(transfers.bags[entry.id]..': '..entry.reason);
         end
         imgui.EndCombo();
     end
@@ -275,10 +320,29 @@ local function render_transfer()
     if choice.bag~=0 and destination and destination~=0 then
         imgui.TextWrapped('Route: '..model.containers[choice.bag+1]..' -> Inventory -> '..model.containers[destination+1]);
     end
-    if imgui.Button('Move item') then
-        if mover:start(choice,destination,quantity[1]) then imgui.CloseCurrentPopup() end;
+    -- Preview against the displayed snapshot; start() still re-reads before sending.
+    local checked,allowed,problem=pcall(function()
+        local key,reason=transfer_context();
+        if not key then return nil,reason end
+        local target=destination or options[1];
+        local valid,route_reason=transfers.plan_route(snapshot,choice,target,access);
+        if not valid then return nil,route_reason end
+        local first_leg=choice.bag~=0 and target~=0 and 0 or target;
+        local move,reason=transfers.prepare(snapshot,choice,first_leg,quantity[1],equipped,access);
+        if not move then return nil,reason end
+        if not destination then return nil,'Choose an available destination.' end
+        return move;
+    end);
+    if not checked then allowed=nil; problem='Cannot validate this item right now.' end
+    if allowed then
+        if imgui.Button('Move item') then
+            clear_action_messages();
+            if mover:start(choice,destination,quantity[1]) then imgui.CloseCurrentPopup() end;
+        end
+        imgui.SameLine();
+    else
+        imgui.TextWrapped('Cannot move: '..(problem or 'Validation unavailable.'));
     end
-    imgui.SameLine();
     if not busy() and imgui.Button('Clear selection') then choice=nil; imgui.CloseCurrentPopup() end
 end
 local function poll()
@@ -293,6 +357,7 @@ local function poll()
     if os.clock() < next_read then return end
     next_read=os.clock()+profile.refresh_seconds;
     local data, reason=model.scan(mm:GetInventory(), AshitaCore:GetResourceManager());
+    if organization.signature(snapshot)~=organization.signature(data) then organization_view:invalidate() end
     snapshot=data;
     if data then
         last_read=os.clock();
@@ -310,6 +375,11 @@ local function render_items()
             if bag.state == 'Client snapshot' and imgui.Selectable(bag.name, selected == bag.id) then selected=bag.id end
         end
         imgui.EndCombo();
+    end
+    if selected ~= nil then
+        imgui.Text('Showing: '..model.containers[selected+1]..' only');
+        imgui.SameLine();
+        if imgui.Button('Show all bags') then selected=nil end
     end
     categories.render(imgui,profile.categories,'Items',settings.save);
     local rows, count=model.search(snapshot, query[1], selected,profile.categories);
@@ -357,6 +427,7 @@ local function render_items()
             custom_view:popup(profile.customization,choice,settings.save);
             if current_access()[choice.bag] and transfers.bags[choice.bag] then
                 if imgui.Button('Stack bag') then
+                    clear_action_messages();
                     sort_request=choice.bag; choice=nil; destination=nil; imgui.CloseCurrentPopup();
                 end
             end
@@ -401,18 +472,29 @@ local function render()
             if imgui.Button('Refresh') then next_read=0 end
             imgui.SameLine(); imgui.TextWrapped(('Auto-refresh: %ds | '):format(profile.refresh_seconds) .. (last_read and ('Last read: %ds ago'):format(math.max(0,math.floor(os.clock()-last_read))) or 'No snapshot'));
             imgui.TextWrapped('Transfers between accessible bags; storage-to-storage moves go via Inventory.');
-            if mover.message then imgui.TextWrapped(mover.message); end
-            if shami_controller.message then imgui.TextWrapped(shami_controller.message) end
-            if crystal_withdrawer.message then imgui.TextWrapped(crystal_withdrawer.message) end
-            if withdrawer.message then imgui.TextWrapped(withdrawer.message) end
-            if preparer.message then imgui.TextWrapped(preparer.message) end
+            action_message('transfer',mover,mover.pending);
+            action_message('Shami action',shami_controller,shami_controller.pending);
+            action_message('crystal withdrawal',crystal_withdrawer,crystal_withdrawer.pending);
+            action_message('collection withdrawal',withdrawer,withdrawer.active or withdrawer.pending);
+            action_message('preparation',preparer,preparer:busy());
+            action_message('organization',organizer,organizer:busy());
+            if organizer:busy() and imgui.Button('Stop organization') then organizer:cancel('Stopped by you. No further moves sent.') end
             if preparer.active and imgui.Button('Stop preparation') then preparer:cancel() end
             if withdrawer.active and imgui.Button('Stop withdrawal') then withdrawer:cancel() end
-            if sorter.message then imgui.TextWrapped(sorter.message); end
+            action_message('stacking action',sorter,sorter.pending);
+            if not busy() and (mover.message or sorter.message or withdrawer.message or preparer.message or crystal_withdrawer.message or shami_controller.message or organizer.message) then
+                if imgui.Button('Clear result') then clear_action_messages() end
+            end
             if imgui.BeginTabBar('MainTabs') then
                 if imgui.BeginTabItem('Items',nil,focus_items and ImGuiTabItemFlags_SetSelected or 0) then focus_items=false; render_items(); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Ownership') then ownership_view:render(snapshot,profile.categories,settings.save); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Customization') then custom_view:render(snapshot,profile.customization,settings.save,withdraw_ui); imgui.EndTabItem(); end
+                if imgui.BeginTabItem('Organize') then
+                    local key,reason=transfer_context();
+                    organization_view:render(snapshot,profile.organization,save_organization,{key=key,ready=key~=nil and not busy(),reason=busy() and 'Wait for the current action to finish.' or reason,access=current_access(),equipped=equipped,
+                        run=function(plan,stack_after) if not busy() then clear_action_messages(); organizer:start(plan,stack_after); organization_view:invalidate() end end});
+                    imgui.EndTabItem();
+                end
                 if imgui.BeginTabItem('Currency') then currency.render(currency_data,crystal_ui,shami_ui,currency_refresh); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Storage') then render_storage(); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Settings') then
@@ -478,7 +560,10 @@ ashita.events.register('command', 'invmaster_command', function(e)
     if cmd~='/im' and cmd~='/invmaster' and cmd~='/fms' then return end
     e.blocked=true;
     local action, text=rest:match('^(%S+)%s*(.*)$'); action=(action or 'ui'):lower();
-    if action == 'craftprepare' then preparer:request(text);
+    if action == 'organizestop' then organizer:cancel('Stopped by you. No further moves sent.');
+    elseif action == 'craftprepare' then
+        if require('prepare_bridge').parse(text) then clear_action_messages() end
+        preparer:request(text);
     elseif action == 'craftcancel' then preparer:cancel(text);
     elseif action == 'ui' then window[1]=not window[1];
     elseif action == 'monitor' and ready() then profile.monitor.enabled=not profile.monitor.enabled; settings.save();
@@ -518,13 +603,14 @@ ashita.events.register('d3d_present', 'invmaster_present', function()
     sorter:tick();
     withdrawer:tick();
     preparer:tick();
+    organizer:tick();
     crystal_withdrawer:tick();
     shami_controller:tick();
     if currency_refresh_due and not busy() and crystal_key() and os.clock()>=currency_next_request then
         currency_refresh_due=false; currency_refresh.request();
     end
     if sort_request~=nil and not mover.pending and not sorter.pending then
-        local bag=sort_request; sort_request=nil; sorter:start(bag);
+        local bag=sort_request; sort_request=nil; clear_action_messages(); sorter:start(bag);
     end
     if ready() then
         bag_monitor.render(snapshot,profile.monitor,settings.save,function(id)
