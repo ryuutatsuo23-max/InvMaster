@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.20.2';
+addon.version = '0.20.11';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -38,7 +38,7 @@ local shami_trace=require('crystal_trace').new({
 local nearby_npc=require('nearby_npc').new({now=os.clock,read=function(index)
     local entity=AshitaCore:GetMemoryManager():GetEntity();
     local name=entity:GetName(index);
-    if name~='Shami' and name~='Ephemeral Moogle' and name~='Ephemeral_Moogle' then return nil end
+    if name~='Shami' and name~='Ephemeral Moogle' and name~='Ephemeral_Moogle' and name~='Green Thumb Moogle' and name~='Green_Thumb_Moogle' and name~='Nomad Moogle' and name~='Nomad_Moogle' then return nil end
     return {name=name,id=entity:GetServerId(index),distance=entity:GetDistance(index),flags=entity:GetRenderFlags0(index)};
 end});
 local currency=require 'currency';
@@ -113,7 +113,7 @@ local function apply_profile(data)
     data.customization=customization.normalize(data.customization);
     data.organization=organization.normalize(data.organization);
     organization_view:reset(data.organization);
-    window[1]=false; query[1]=''; reset();
+    window[1]=data.main_window_open==true; query[1]=''; reset();
 end
 local function ready()
     local player=GetPlayerEntity();
@@ -205,7 +205,21 @@ local function current_access()
     local key=transfer_context();
     if not key then return {} end
     local ok,capacity=pcall(function() return AshitaCore:GetMemoryManager():GetInventory():GetContainerCountMax(5) end);
-    return bag_access:allowed(key,ok and capacity or nil);
+    local live_ok,live=pcall(function()
+        local mm=AshitaCore:GetMemoryManager();
+        local name,kind=require('bag_access').storage_npc(mm:GetParty():GetMemberZone(0));
+        if not name or not nearby_npc:find(name,key) then return nil end
+        local inv=mm:GetInventory(); local before=inv:GetContainerUpdateCounter();
+        local evidence={key=key,kind=kind,capacities={}};
+        for _,id in ipairs({1,2,4,9}) do evidence.capacities[id]=inv:GetContainerCountMax(id) end
+        -- Raw SDK arrays are 1-based: Locker bag ID 4 is entry 5.
+        -- The secondary Locker capacity is needed even if contents are readable.
+        local raw_ok,secondary=pcall(function() return inv:GetRawStructure().ContainerMaxCapacity2[5] end);
+        if raw_ok then evidence.locker_secondary=secondary end
+        if type(before)~='number' or before~=inv:GetContainerUpdateCounter() or transfer_context()~=key then return nil end
+        return evidence;
+    end);
+    return bag_access:allowed(key,ok and capacity or nil,live_ok and live or nil);
 end
 local function equipped(bag,slot)
     local inv=AshitaCore:GetMemoryManager():GetInventory();
@@ -531,7 +545,7 @@ local function render()
                     imgui.Separator(); imgui.Text('InvMaster ' .. addon.version .. ' | DragoHorse');
                     imgui.TextWrapped('/im - toggle window. /im find <name> - search. /im refresh - request a fresh snapshot. /im status - access diagnostics.');
                     imgui.TextWrapped('Storage-to-storage transfers use Inventory as an intermediate step. If the second step cannot proceed, items remain in Inventory. Stack bag combines partial stacks using the game sort request. No automatic retries.');
-                    imgui.TextWrapped('Satchel, Sack and Case work without Mog House entry. Enter your Mog House after loading to learn home-storage access. Wardrobes accept equipment only. Temporary, Recycle and Nomad Moogle access are not supported.');
+                    imgui.TextWrapped('Satchel, Sack and Case work without Mog House entry. Home access is learned on entry. Within 6 yalms of Green Thumb Moogle (Mog Garden) or supported Nomad Moogles, live bag capacities can recover access after reload. Nomads exclude Storage. Wardrobes accept equipment only. Temporary and Recycle are not supported.');
                     imgui.TextWrapped('Slot rows stay separate, including items with the same name. Augments are not decoded in this version. NPC storage, delivery boxes and storage-slip contents are not included.');
                     imgui.EndTabItem();
                 end
@@ -543,6 +557,12 @@ local function render()
 end
 apply_profile(settings.load(T{hide_unavailable=true, refresh_seconds=2, auto_stack=false}));
 settings.register('settings', 'invmaster_profile', apply_profile);
+ashita.events.register('unload', 'invmaster_window_state', function()
+    if ready() then
+        profile.main_window_open=window[1]==true;
+        settings.save();
+    end
+end);
 ashita.events.register('packet_in', 'invmaster_access', function(e)
     if e.injected or e.blocked then return end
     crystal_trace:observe('in',e.id,e.data);
@@ -608,6 +628,28 @@ ashita.events.register('command', 'invmaster_command', function(e)
         print('[InvMaster] Current: ' .. (key or reason));
         print('[InvMaster] Recorded: ' .. (bag_access.key or 'none') .. ' | Mog House: ' .. tostring(bag_access.home) .. ' | Entry flag: ' .. tostring(bag_access.home_byte));
         print('[InvMaster] Capacity update: ' .. (bag_access.sizes and 'received' or 'missing') .. ' | Wardrobe flags: ' .. tostring(bag_access.paid));
+        local npc_name=require('bag_access').storage_npc(AshitaCore:GetMemoryManager():GetParty():GetMemberZone(0));
+        local nearby=key and npc_name and nearby_npc:find(npc_name,key,nil,true);
+        print('[InvMaster] Storage Moogle: '..(nearby and npc_name..' within 6 yalms' or 'none verified nearby'));
+        local raw_ok,secondary=pcall(function() return AshitaCore:GetMemoryManager():GetInventory():GetRawStructure().ContainerMaxCapacity2[5] end);
+        print('[InvMaster] Live Locker secondary capacity: '..tostring(raw_ok and secondary or 'unavailable'));
+        if text=='raw' then
+            local inv=AshitaCore:GetMemoryManager():GetInventory();
+            for _,field in ipairs({'ContainerMaxCapacity','ContainerMaxCapacity2'}) do
+                local entries={};
+                for index=0,6 do
+                    local read_ok,value=pcall(function() return inv:GetRawStructure()[field][index] end);
+                    entries[#entries+1]=index..'='..tostring(read_ok and value or 'unavailable');
+                end
+                print('[InvMaster] '..field..': '..table.concat(entries,' '));
+            end
+            local entries={};
+            for id=0,6 do
+                local read_ok,value=pcall(function() return inv:GetContainerCountMax(id) end);
+                entries[#entries+1]=id..'='..tostring(read_ok and value or 'unavailable');
+            end
+            print('[InvMaster] SDK bag capacities: '..table.concat(entries,' '));
+        end
         for _,id in ipairs({0,1,2,4,5,9}) do
             local bag=snapshot and snapshot[id+1];
             local free=bag and bag.state=='Client snapshot' and tostring(bag.free) or 'unknown';

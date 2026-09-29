@@ -47,9 +47,9 @@ function M.new(env)
     local function finish(reason)
         local p=self.active;
         if p and p.stack_bags then
-            reason=reason..(' Stacking: %d bags confirmed; %d bags skipped to protect untouched items.'):format(p.stacked,p.protected_skips);
+            reason=reason..(' Stacking: %d bag%s confirmed; %d bag%s skipped to protect untouched items.'):format(p.stacked,p.stacked==1 and '' or 's',p.protected_skips,p.protected_skips==1 and '' or 's');
         end
-        self.message=('Organization: %d/%d moves confirmed. %s'):format(p and p.done or 0,p and #p.moves or 0,reason);
+        self.message=('%d/%d move%s confirmed. %s'):format(p and p.done or 0,p and #p.moves or 0,p and #p.moves==1 and '' or 's',reason);
         self.active=nil;
     end
     function self:start(plan,stack_after)
@@ -79,7 +79,7 @@ function M.new(env)
                     if not seen[m.destination] then seen[m.destination]=true; p.stack_bags[#p.stack_bags+1]=m.destination end
                 end
             end
-            self.message=('Organization queued: %d moves.'):format(#moves);
+            self.message=('Queued: %d move%s.'):format(#moves,#moves==1 and '' or 's');
         end);
         if not ok then self.message='Cannot validate organization plan; nothing sent.' end
         return self.active~=nil;
@@ -96,7 +96,7 @@ function M.new(env)
             if env.now()>=route.pending.deadline then self:cancel('Stopped: confirmation timed out. No further moves sent.') end
             completed=false; route:tick(); self.pending=route.pending;
             if route.pending then
-                self.message=(p and p.cancelled and 'Organization stopping: ' or 'Organization: ')..(route.message or 'Awaiting confirmation.');
+                self.message=(p and p.cancelled and 'Stopping: ' or '')..(route.message or 'Awaiting confirmation.');
                 return;
             end
             if completed then p.done=p.done+1; p.index=p.index+1
@@ -106,7 +106,7 @@ function M.new(env)
             if env.now()>=stacker.pending.deadline then self:cancel('Stopped: stacking confirmation timed out. No further moves sent.') end
             stack_completed=false; stacker:tick(); self.pending=stacker.pending;
             if stacker.pending then
-                self.message=(p.cancelled and 'Organization stopping: ' or 'Organization stacking: ')..(stacker.message or 'Awaiting confirmation.');
+                self.message=(p.cancelled and 'Organization stopping: ' or 'Stacking: ')..(stacker.message or 'Awaiting confirmation.');
                 return;
             end
             if stack_completed then p.stacked=p.stacked+1; p.stack_index=p.stack_index+1
@@ -123,10 +123,10 @@ function M.new(env)
                 if protected_bag(bag) then p.protected_skips=p.protected_skips+1; p.stack_index=p.stack_index+1; return end
                 if saving==0 then p.stack_index=p.stack_index+1; return end
                 if not stacker:start(bag_id) then finish(stacker.message or 'Stacking unavailable.'); return end
-                self.pending=stacker.pending; self.message='Organization stacking: '..(stacker.message or 'Awaiting confirmation.'); return;
+                self.pending=stacker.pending; self.message='Stacking: '..(stacker.message or 'Awaiting confirmation.'); return;
             end
             finish(p.deferred>0
-                and ('Run finished. %d moves were deferred. View a fresh plan and confirm the next run.'):format(p.deferred)
+                and ('Run finished. Deferred moves: %d. View a fresh plan and confirm the next run.'):format(p.deferred)
                 or 'Finished. Review a new plan for any remaining work.'); return;
         end
         local wanted=p.moves[p.index];
@@ -140,7 +140,7 @@ function M.new(env)
         end
         if not found or not valid(p) then finish('Next reviewed move changed or is blocked. View a fresh plan.'); return end
         if not route:start(wanted.choice,wanted.destination,wanted.count) then finish(route.message or 'Move validation failed.'); return end
-        self.pending=route.pending; self.message=('Organization %d/%d: '):format(p.index,#p.moves)..(route.message or 'Waiting.');
+        self.pending=route.pending; self.message=('Move %d/%d: '):format(p.index,#p.moves)..(route.message or 'Waiting.');
     end
     function self:tick()
         local ok=pcall(tick);

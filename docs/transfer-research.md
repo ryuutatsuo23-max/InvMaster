@@ -109,3 +109,104 @@ A sort starts only with accessible stable bag contents and mergeable stacks.
 Completion requires conserved item/extra-data totals and expected occupied-slot
 reduction on two reads. Uncertain requests keep the shared operation lock.
 Opt-in destination auto-stacking only follows fully confirmed transfers.
+
+
+## v0.20.5: current capacities near storage-service Moogles
+
+User evidence in Mog Garden (zone 280): the learned entry flag is 1, and Safe,
+Storage, Locker and Safe 2 are accessible. Reloading v0.20.4 without zoning
+clears the recorded key, capacities and flag while readable contents remain.
+
+A narrowly scoped fallback now uses the existing nearby-NPC reader within six
+yalms, current SDK capacities, stable update counters and the idle character key.
+It is rebuilt on demand, not saved as home access. It applies to Green Thumb
+Moogle only in zone 280, and Nomad Moogle only in Tavnazian Safehold (26),
+Nashmau (53), Rabao (247), Kazham (250) and Norg (252). NPC names alone do not
+suffice; the level-limit Nomad in Ru'Lude and generic/event Moogles are excluded.
+Nomads never grant Storage access. A capacity must be a whole number from 1 to
+80; Locker also requires a positive secondary capacity up to 81. A learned
+server report disabling the bag takes precedence. Missing raw Locker data leaves
+Locker unavailable, without preventing other verified bags. The existing home
+entry path and paid-Wardrobe checks are unchanged.
+
+Sources inspected, without copying an addon implementation:
+- Installed official Ashita SDK `IInventory:GetRawStructure`,
+  `inventory_t.ContainerMaxCapacity2`, and `GetContainerCountMax`.
+- https://www.bg-wiki.com/ffxi/Mog_House : storage-service Nomad locations and
+  their exclusion of Storage.
+- https://github.com/Windower/Resources/blob/master/resources_data/zones.lua :
+  zone identifiers.
+- https://github.com/LandSandBoat/server/blob/base/scripts/zones/Mog_Garden/npcs/Green_Thumb_Moogle.lua :
+  reference for the Mog House menu service, not proof of Retail behavior.
+
+No interaction, access request, or transfer is sent by proximity or `/im status`.
+Normal previews and user confirmation still control all actions. Every subsequent
+move uses a fresh access check, including route continuation. Walking away during
+an in-flight first leg prevents its follow-up when no learned home access exists.
+No profiles, unlocks or saved balances are changed. Ordinary Mog House reload
+recovery remains outside this fallback because a generic Moogle name is not
+sufficient evidence of a private residence.
+
+Offline validation covers recovery without a zone packet, supported locations,
+wrong names/zones, six-yalm bounds, Locker capacity failures, disabled bags,
+context changes, explicit moves and stopping a route on loss of proximity.
+Live verification of the new fallback is pending. `/im status` now reports the
+nearby storage Moogle and live Locker secondary capacity to support that check.
+
+
+### Reload test and Locker diagnostic (v0.20.6)
+
+The user confirmed the v0.20.5 status after reloading beside Green Thumb Moogle:
+recorded state remains empty, but Safe, Storage and Safe 2 report access=true.
+Locker reports false because raw `ContainerMaxCapacity2[4]` is zero, while the
+previous zone-entry capacity update reported Locker secondary 81. This does not
+establish whether the raw array index or its semantics differ from the wire data.
+No Locker guard is loosened. `/im status raw` prints raw capacity indices 0-6 and
+the corresponding SDK bag capacities, read-only, to establish the mapping.
+Actual transfers with the recovered access have not yet been confirmed live.
+
+
+### Confirmed raw array mapping (v0.20.7)
+
+The live `/im status raw` output shows both raw capacity arrays are one-based:
+index 0 unavailable; indices 1-6 are 81,81,11,0,81,81. The SDK method for bag
+IDs 0-6 returns 80,80,10,0,80,80,80. Therefore Locker (bag ID 4) uses raw entry
+5, not entry 4 (Temporary). Recovery and diagnostics now read entry 5. Fixtures
+match that observed mapping and also test that positive Temporary capacity cannot
+authorize a disabled Locker. The secondary-capacity requirement is unchanged.
+Locker recovery after this correction still awaits a live check.
+
+
+### Green Thumb success and Mhaura omission (v0.20.8)
+
+The user confirmed v0.20.7 recovers Safe, Storage, Locker and Safe 2 after reload
+beside Green Thumb Moogle without rezoning, and transfers work there. Locker's
+correct raw secondary value is 81.
+
+A subsequent screenshot beside a Nomad Moogle shows current/recorded zone 249
+(Mhaura), entry flag 2, secondary Locker capacity 81, and no verified storage
+Moogle. Mhaura was missing from the location allowlist, so discovery was never
+attempted. Add zone 249 based on this live NPC/location evidence and the zone
+resource mapping; preserve exact-name, range, capacity and no-Storage checks.
+The location regression is offline-tested; live Nomad transfers remain pending.
+
+
+### Complete listed Nomad locations (v0.20.9)
+
+Compared https://www.bg-wiki.com/ffxi/Nomad_Moogle with the allowlist on
+2026-09-30. Selbina (zone 248) was the only missing storage-service location
+following the Mhaura fix. It is now included and covered by the existing access
+regression matrix. All seven listed zones are supported: Selbina, Mhaura, Rabao,
+Kazham, Norg, Tavnazian Safehold and Nashmau. The page explicitly excludes
+Ru'Lude Gardens' special Nomad from ordinary Mog House services; it remains
+excluded. Range, identity, capacity, Locker and no-Storage guards are unchanged.
+Selbina and the other Nomad locations still require live transfer verification.
+
+### Nomad organization confirmed live (2026-09-30)
+
+The user confirmed organization succeeds beside a Nomad Moogle. The screenshot
+shows 5/5 moves confirmed and a finished run, with one destination bag skipped
+during stacking to protect untouched items. This follows the Mhaura discovery
+fix; the success screenshot itself does not display a zone ID or individual
+transfer endpoints. It confirms a completed Nomad organization run, not every
+bag or every supported location. Other Nomad locations remain unverified live.

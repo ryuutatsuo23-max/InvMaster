@@ -69,7 +69,7 @@ function M.new(env)
         local p=self.pending; if not p then return end
         if p.stage=='uncertain' then return end
         p.stop_requested=true;
-        if p.stage=='balance' or p.stage=='next' then self.pending=nil; self.message=('Deposit stopped; %d trade(s) confirmed. No further trade sent.'):format(p.done)
+        if p.stage=='balance' or p.stage=='next' then self.pending=nil; self.message=('Deposit stopped; %d trade%s confirmed. No further trades sent.'):format(p.done,p.done==1 and '' or 's')
         else self.message='Stopping after the sent trade confirms. No further trades will be sent.' end
     end
     local function response(p,automated)
@@ -219,7 +219,7 @@ function M.new(env)
                     self.message=('Deposit: %d/%d trades confirmed. Waiting for the Moogle to be ready.'):format(p.done,p.batch_count);
                 else
                     self.pending=nil;
-                    self.message=('Deposited %d crystal units; Inventory and stored balance confirmed. %d/%d trades confirmed.%s'):format(p.confirmed_units,p.done,p.batch_count,p.stop_requested and ' Stopped; no further trades sent.' or '');
+                    self.message=('Deposited %d crystal unit%s; Inventory and stored balance confirmed. %d/%d trade%s confirmed.%s'):format(p.confirmed_units,p.confirmed_units==1 and '' or 's',p.done,p.batch_count,p.batch_count==1 and '' or 's',p.stop_requested and ' Stopped; no further trades sent.' or '');
                 end
             end
         else p.confirmed_at=nil end

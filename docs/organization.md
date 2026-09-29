@@ -98,8 +98,10 @@ No saved user data is migrated or discarded.
 
 ## Validation
 
-Splitting large plans is offline-tested. On 2026-09-29 the user deferred its
-live check until a large plan occurs naturally; no test setup is required now.
+The large-plan preview was visually confirmed live on 2026-09-29: 26 moves
+using 49 steps in this run, with nine moves deferred. Completion across separate
+runs remains offline-tested and awaits live confirmation. The subsequent green
+and amber section headings were also visually confirmed by the user.
 
 `python -B test_invmaster.py` covers the planner and mocked UI in addition to the
 existing regression suite. Checks include precedence, protection, keep quantities,
@@ -120,8 +122,10 @@ Optional organization stacking is offline-tested, including default-off behavior
 destination deduplication, sequential confirmation, protected bags, Stop, timeouts,
 uncertain sends, context changes, and the UI packet path. A subsequent live run
 confirmed 8/8 moves and stacking in one destination bag, with zero protected-bag
-skips. Its fresh preview showed no remaining moves. Protected-bag skipping and
-Stop during stacking remain offline-tested rather than live-confirmed.
+skips. Its fresh preview showed no remaining moves. A subsequent live Nomad
+Moogle run on 2026-09-30 confirmed 5/5 moves and reported one bag skipped to
+protect untouched items. Stop during stacking remains offline-tested rather
+than live-confirmed.
 
 The user also confirmed the v0.18.1 geode-to-Inventory destination rule works
 live; the accompanying screenshot reports 3/3 organization moves confirmed.

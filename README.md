@@ -23,7 +23,8 @@ before replacing its files. Your character settings are stored separately and ar
 | `/im refresh` | Refresh bag contents |
 | `/im status` | Print bag space and access information |
 
-The window starts hidden. `/invmaster` and the old `/fms` alias also work.
+The window starts hidden on first use. Its open/closed state is saved per character
+when the addon unloads and restored on reload. `/invmaster` and the old `/fms` alias also work.
 
 ## Features
 
@@ -87,7 +88,7 @@ See [deposit details](docs/crystal-deposits.md).
 ## Notes
 
 - Only your current character's readable bags are searched. Other characters, delivery boxes and storage slips are not included.
-- For Safe, Safe 2, Storage and Locker transfers, leave and re-enter your Mog House after loading the addon. Nomad Moogle access is not supported.
+- In Mog Garden, stand within 6 yalms of **Green Thumb Moogle** to recover bag access after loading. Supported **Nomad Moogles** in Rabao, Selbina, Mhaura, Kazham, Norg, Tavnazian Safehold and Nashmau provide Safe/Safe 2 and available Locker access, but not Storage. Keep the NPC menu closed. Ordinary Mog Houses still require entry after loading.
 - Stay idle while moving items. Do not manually rearrange bags or run another inventory mover during a transfer.
 - Hiding the window does not cancel an action. If a move cannot be confirmed, check your bags before reloading; InvMaster does not retry it automatically.
 - Moogle withdrawals have worked in Bastok Mines and another location, but not every Moogle or Shami exchange has been tested in game. CraftMaster preparation still needs a live check.

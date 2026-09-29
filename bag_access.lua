@@ -1,5 +1,13 @@
--- Passive server updates only; no packet requests or memory scans.
+-- Passive server updates plus checked SDK capacities near storage-service NPCs.
 local M = {};
+local nomad_zones={[26]=true,[53]=true,[247]=true,[248]=true,[249]=true,[250]=true,[252]=true};
+function M.storage_npc(zone)
+    if zone==280 then return 'Green Thumb Moogle','garden' end
+    if nomad_zones[zone] then return 'Nomad Moogle','nomad' end
+end
+local function capacity(n,max)
+    return type(n)=='number' and n>=1 and n<=max and n==math.floor(n);
+end
 local function uint(data, offset, size)
     if type(data)~='string' or #data<offset+size then return nil end
     local value=0;
@@ -34,12 +42,26 @@ function M.new()
             self.paid=uint(data,0x5C,1);
         end
     end
-    function self:allowed(key,satchel_capacity)
+    function self:allowed(key,satchel_capacity,nearby)
         local bags={[0]=true,[6]=true,[7]=true,[8]=true,[10]=true};
         -- Satchel is portable. The SDK already exposes its usable capacity on reload.
         bags[5]=type(satchel_capacity)=='number' and satchel_capacity>=1
             and satchel_capacity<=80 and satchel_capacity==math.floor(satchel_capacity);
-        if key~=self.key then return bags end
+        -- This evidence is rebuilt from the live client; never saved across reloads.
+        local function recovered()
+            if key and nearby and nearby.key==key and type(nearby.capacities)=='table' and (nearby.kind=='garden' or nearby.kind=='nomad') then
+                for _,id in ipairs({1,2,4,9}) do
+                    local usable=capacity(nearby.capacities[id],80);
+                    if id==2 and nearby.kind~='garden' then usable=false end
+                    if id==4 then usable=usable and capacity(nearby.locker_secondary,81) end
+                    -- A current server report of a disabled bag takes precedence.
+                    if self.key==key and self.sizes and (not self.sizes[id] or self.sizes[id]<=0) then usable=false end
+                    bags[id]=usable==true
+                end
+            end
+            return bags;
+        end
+        if key~=self.key then return recovered() end
         for _,bag in ipairs({1,2,4,5,9,11,12,13,14,15,16}) do
             local size=self.sizes and self.sizes[bag];
             -- Live 0x01C values reach 81 for an 80-slot bag. These are wire
@@ -52,14 +74,14 @@ function M.new()
             end
             if bag~=5 or self.sizes then bags[bag]=available==true end
         end
-        return bags;
+        return recovered();
     end
     function self:reason(key,bag)
         if self:allowed(key)[bag] then return nil end
         if bag==5 and (key~=self.key or not self.sizes) then
             return 'Satchel data is unavailable. Wait for inventory loading, then use Refresh.';
         end
-        if not self.key then return 'No zone-entry update recorded. Leave and re-enter your Mog House.' end
+        if not self.key then return 'No zone-entry update recorded. Stand near a supported storage Moogle, or re-enter your Mog House.' end
         if key~=self.key then return 'Recorded zone/player differs from the current context. Run /im status.' end
         if (bag==1 or bag==2 or bag==4 or bag==9) and not self.home then
             return 'The recorded zone entry was not detected as a Mog House. Run /im status.';

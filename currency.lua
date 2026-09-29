@@ -111,7 +111,7 @@ function M.render(data,withdraw,exchange,refresh)
             imgui.SetNextItemWidth(120); imgui.InputInt('Crystal units',quantity);
             local n=tonumber(quantity[1]); if not n or n~=n then n=1 end
             quantity[1]=math.max(1,math.min(65535,math.floor(n)));
-            imgui.Text(('%d cluster(s) + %d crystal(s)'):format(math.floor(quantity[1]/12),quantity[1]%12));
+            imgui.Text(('%d cluster%s + %d crystal%s'):format(math.floor(quantity[1]/12),math.floor(quantity[1]/12)==1 and '' or 's',quantity[1]%12,quantity[1]%12==1 and '' or 's'));
             local npc,reason=withdraw.target(true);
             if not npc then imgui.TextWrapped(reason)
             else

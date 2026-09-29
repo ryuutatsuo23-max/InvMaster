@@ -76,15 +76,22 @@ function M.new()
         end
         if self.all_preview then
             local p=self.all_preview;
-            imgui.Text(('%d Inventory stacks in %d trade(s), up to 8 stacks each.'):format(#p.rows,p.batches or 0));
+            imgui.Text(('%d Inventory stack%s in %d trade%s, up to 8 stacks each.'):format(#p.rows,#p.rows==1 and '' or 's',p.batches or 0,p.batches==1 and '' or 's'));
             imgui.TextWrapped('Only these reviewed stacks will be deposited. Stop cancels later trades; a trade already sent finishes confirmation. No retries.');
-            for i,units in ipairs(p.units_by_element) do if units>0 then imgui.Text(names[i]..': '..units..' crystal units') end end
-            for _,row in ipairs(p.rows) do imgui.Text(('%d x %s — Inventory slot %d'):format(row.count,row.name,row.slot)) end
-            for _,notice in ipairs(p.notices) do imgui.TextColored({1,0.35,0.35,1},'Notice:'); imgui.SameLine(); imgui.TextWrapped(notice) end
             local npc=env.target(true);
             if not require('crystal_deposit').supported(npc) then imgui.TextWrapped('Stand within 6 yalms of an available Ephemeral Moogle.')
             elseif p.can_start and not env.busy() and env.deposit_all and imgui.Button('Confirm deposit all') then env.deposit_all(p); self.all_preview=nil end
             if imgui.Button('Cancel deposit all preview') then self.all_preview=nil end
+            if self.all_preview then
+                local _,available_height=imgui.GetContentRegionAvail();
+                local list_height=math.max(1,math.min(300,available_height-imgui.GetFrameHeightWithSpacing()*2));
+                if imgui.BeginChild('CrystalDepositAllDetails',{0,list_height}) then
+                    for i,units in ipairs(p.units_by_element) do if units>0 then imgui.Text(names[i]..': '..units..' crystal unit'..(units==1 and '' or 's')) end end
+                    for _,row in ipairs(p.rows) do imgui.Text(('%d x %s — Inventory slot %d'):format(row.count,row.name,row.slot)) end
+                    for _,notice in ipairs(p.notices) do imgui.TextColored({1,0.35,0.35,1},'Notice:'); imgui.SameLine(); imgui.TextWrapped(notice) end
+                end
+                imgui.EndChild();
+            end
         end
         if imgui.Button('Plan crystal deposit') then self.open=not self.open end
         if not self.open then return end
@@ -100,8 +107,8 @@ function M.new()
         local npc,reason=env.target(true);
         local p=M.plan(env.inventory(),self.element,self.loose[1],self.clusters[1],balances and balances[self.element],npc,reason,env.busy());
         if npc then imgui.Text('Nearby Ephemeral Moogle verified within 6 yalms.') end
-        if p.units then imgui.Text(('%d crystal units selected (each cluster counts as 12).'):format(p.units)) end
-        imgui.Text(('Eligible in Inventory: %d crystals, %d clusters.'):format(p.loose,p.clusters));
+        if p.units then imgui.Text(('%d crystal unit%s selected (each cluster counts as 12).'):format(p.units,p.units==1 and '' or 's')) end
+        imgui.Text(('Eligible in Inventory: %d crystal%s, %d cluster%s.'):format(p.loose,p.loose==1 and '' or 's',p.clusters,p.clusters==1 and '' or 's'));
         if p.projected then imgui.Text(('Estimated stored total: %d / 5000. Last known balance; not a fresh trade check.'):format(p.projected)) end
         for _,row in ipairs(p.rows) do imgui.Text(('%d x %s — Inventory slot %d'):format(row.count,row.name,row.slot)) end
         for _,message in ipairs(p.notices) do imgui.TextColored({1,0.35,0.35,1},'Notice:'); imgui.SameLine(); imgui.TextWrapped(message) end

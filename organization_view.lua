@@ -104,12 +104,12 @@ function M.new()
         if imgui.Button('View organization plan') then self.preview=rules.plan(snapshot,data,env); self.stack_after={false} end
         if self.preview then
             local p=self.preview;
-            imgui.Text(('%d proposed moves | %d notices | %d protected item types'):format(#p.moves,#p.blocked,p.protected));
+            imgui.Text(('Proposed moves: %d | Notices: %d | Protected item types: %d'):format(#p.moves,#p.blocked,p.protected));
             local summary=rules.run_summary(p);
             imgui.TextWrapped('Only moves under This run will execute. Notices are skipped. Stop prevents further sends; a sent move still needs confirmation. No retries.');
             imgui.Text(('%d / 50 transfer steps this run (routes via Inventory use two).'):format(summary.steps));
             if summary.deferred>0 then
-                imgui.Text(('%d moves this run | %d deferred | %d runs in this preview'):format(summary.count,summary.deferred,summary.runs));
+                imgui.Text(('Moves this run: %d | Deferred: %d | Runs in this preview: %d'):format(summary.count,summary.deferred,summary.runs));
                 imgui.TextWrapped('After this run, view a fresh plan and confirm the next run. Later runs never start automatically.');
             end
             if #p.moves>0 then
@@ -122,9 +122,16 @@ function M.new()
             if #p.moves==0 and #p.blocked==0 then imgui.Text('No moves proposed under the saved rules.') end
             if imgui.BeginChild('OrganizationPlan',{0,0}) then
                 for i,move in ipairs(p.moves) do
-                    if i==1 then imgui.Text('This run:') end
+                    if i==1 then
+                        imgui.Separator();
+                        imgui.TextColored({0.35,1.0,0.45,1.0},('This run | Moves: %d | Steps: %d'):format(summary.count,summary.steps));
+                        imgui.Separator();
+                    end
                     if i==summary.count+1 then
-                        imgui.Separator(); imgui.Text('Later runs - fresh preview and confirmation required:');
+                        imgui.Separator();
+                        imgui.TextColored({1.0,0.75,0.3,1.0},('Later runs | Deferred moves: %d'):format(summary.deferred));
+                        imgui.TextWrapped('Not included in this run. Preview and confirm again after it finishes.');
+                        imgui.Separator();
                     end
                     imgui.TextWrapped(('%d x %s: %s (slot %d) -> %s%s'):format(move.count,move.name,bags[move.source],move.slot,bags[move.destination],move.via_inventory and ' via Inventory' or ''));
                 end

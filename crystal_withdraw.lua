@@ -90,7 +90,7 @@ function M.new(env)
             local loose,clusters=totals(bag,p.element);
             if loose==p.before_loose+p.quantity%12 and clusters==p.before_clusters+math.floor(p.quantity/12) then
                 if p.confirmed and env.now()-p.confirmed>=0.25 then
-                    self.pending=nil; self.message=('Received %d cluster(s) and %d crystal(s).'):format(math.floor(p.quantity/12),p.quantity%12); env.changed(); return;
+                    self.pending=nil; self.message=('Received %d cluster%s and %d crystal%s.'):format(math.floor(p.quantity/12),math.floor(p.quantity/12)==1 and '' or 's',p.quantity%12,p.quantity%12==1 and '' or 's'); env.changed(); return;
                 end
                 p.confirmed=p.confirmed or env.now();
             else p.confirmed=nil end

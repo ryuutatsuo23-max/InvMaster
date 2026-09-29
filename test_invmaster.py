@@ -99,7 +99,7 @@ def addon_setup():
     GetPlayerEntity=function() return player end
     local mm={GetPlayer=function() return {GetIsZoning=function() return zoning end} end,
       GetTarget=function() return {GetTargetIndex=function() return target_index or 0 end} end,
-      GetEntity=function() return {GetName=function(_,i) return i==(npc_index or target_index) and target_name or nil end,GetRenderFlags0=function() return 0x200 end,GetDistance=function() return target_distance end,GetServerId=function() return target_id end,GetStatus=function() return player_status end,GetHPPercent=function() return hp end} end,
+      GetEntity=function() return {GetName=function(_,i) return i==(npc_index or target_index) and target_name or nil end,GetRenderFlags0=function() return target_flags or 0x200 end,GetDistance=function() return target_distance end,GetServerId=function() return target_id end,GetStatus=function() return player_status end,GetHPPercent=function() return hp end} end,
       GetParty=function() return {GetMemberTargetIndex=function() return 1 end,GetMemberZone=function() return zone end} end,
       GetInventory=function() return inv end}
     AshitaCore={GetPacketManager=function() return {AddOutgoingPacket=function(_,id,p) sent[#sent+1]={id=id,data=p}; if fail_send_at==#sent then error("uncertain API result") end end} end,GetMemoryManager=function() return mm end,GetResourceManager=function() return resources end}
@@ -118,7 +118,7 @@ def addon_setup():
       TextColored=function(color,text) colored=colored or {}; colored[text]=color; ui[#ui+1]=text end,
       TableSetupScrollFreeze=function(cols,rows) assert(cols==0 and rows==1) end,
       SetNextWindowSize=function(size,cond) next_window_size=size; next_window_cond=cond end, SetNextItemWidth=function(width) item_width=width end,
-      Begin=function(name,visible) if close_monitor and name=='InvMaster Bags###InvMasterBagMonitor' then visible[1]=false; close_monitor=false end; return true end, End=function() end,
+      Begin=function(name,visible) if close_main and name=='InvMaster###FindMyStuff' then visible[1]=false; close_main=false end; if close_monitor and name=='InvMaster Bags###InvMasterBagMonitor' then visible[1]=false; close_monitor=false end; return true end, End=function() end,
       Text=function(t) ui[#ui+1]=t end, TextWrapped=function(t) ui[#ui+1]=t end,
       TableGetSortSpecs=function() return sort_specs end,
       InputInt=function(_,v) if edit_interval then v[1]=edit_interval; edit_interval=nil; return true end; return false end,
@@ -267,7 +267,7 @@ l=addon_setup(); l.execute(PACKET_HELPERS); run(l,"cmd('/fms'); tick(0); tick(3)
 l=addon_setup(); run(l,"cmd('/fms'); tick(0); right_click='Lgn. Knuckles##1_4'; tick(3); tick(4); assert(shown('Safe source access is not confirmed') and shown('No zone-entry update')); assert(not shown('No accessible destination with free space'))")
 l=addon_setup(); l.execute(PACKET_HELPERS); run(l,"cmd('/fms'); tick(0); tick(3); callbacks.packet_in({id=0x00A,data=zone_packet(true)}); right_click='Lgn. Knuckles##1_4'; tick(4); tick(4); assert(shown('Waiting for a complete bag-capacity update'))")
 l=access_setup(); run(l,"access:observe(0x00A,zone_packet(true)); assert(access:reason('Alice:100:2',4):find('differs')); access:observe(0x01C,wire(0x48,{[8]=80})); assert(access:reason('Alice:100:1',4):find('disabled')); assert(access.secondary[4]==0); access:observe(0x00A,zone_packet(false)); assert(access:reason('Alice:100:1',4):find('not detected'))")
-l=addon_setup(); l.execute(PACKET_HELPERS); run(l,"local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/fms'); tick(0); tick(3); callbacks.packet_in({id=0x00A,zone=1,data=zone_packet(true)}); callbacks.packet_in({id=0x01C,sizes=1,data=sizes_packet()}); assert(cmd('/fms status')); assert(#lines==9); assert(lines[1]:find('Alice:100:1',1,true)); assert(lines[2]:find('Entry flag: 1',1,true)); assert(lines[7]:find('Locker: access=true',1,true)); assert(#sent==0)")
+l=addon_setup(); l.execute(PACKET_HELPERS); run(l,"local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/fms'); tick(0); tick(3); callbacks.packet_in({id=0x00A,zone=1,data=zone_packet(true)}); callbacks.packet_in({id=0x01C,sizes=1,data=sizes_packet()}); assert(cmd('/fms status')); assert(#lines==11); assert(lines[1]:find('Alice:100:1',1,true)); assert(lines[2]:find('Entry flag: 1',1,true)); assert(lines[9]:find('Locker: access=true',1,true)); assert(#sent==0)")
 
 # Context menu setup, no transfers merely from opening it.
 def move_setup():
@@ -449,7 +449,7 @@ l=crystal_setup(); run(l, "assert(cw:start(1,12)); cw:observe(menu()); now=11; c
 l=crystal_setup(); run(l, "send_error=true; assert(cw:start(1,12)); cw:observe(menu()); now=20; cw:tick(); assert(#crystal_sent==2 and cw.pending)")
 l=crystal_setup(); run(l, "local c=require('crystal_withdraw'); assert(c.space(1)==1 and c.space(12)==1 and c.space(25)==2 and c.space(145)==2); assert(not cw:start(1,0)); assert(not cw:start(9,12)); assert(not cw:start(1,0/0)); assert(#crystal_sent==0)")
 
-l=addon_setup(); l.execute(PACKET_HELPERS); run(l, "zone=234; target_index=381; target_id=0x010EA17D; target_name='Ephemeral Moogle'; target_distance=9; cmd('/im'); tick(0); tick(3); active_tab='Currency'; right_click='Fire: --##Crystal1'; tick(4); assert(shown('Fire -> Inventory')); edit_interval=12; tick(5); assert(shown('1 cluster(s) + 0 crystal(s)')); click='Withdraw crystals'; tick(6); assert(#sent==1 and sent[1].id==0x01A); local e={id=0x034,data=wire(0x30,{[4]={0x7D,0xA1,0x0E,1},[8]=190,[0x28]={0x7D,1},[0x2A]=234,[0x2C]={0x69,2}})}; callbacks.packet_in(e); assert(e.blocked and #sent==2 and sent[2].id==0x05B and sent[2].data[9]==12)")
+l=addon_setup(); l.execute(PACKET_HELPERS); run(l, "zone=234; target_index=381; target_id=0x010EA17D; target_name='Ephemeral Moogle'; target_distance=9; cmd('/im'); tick(0); tick(3); active_tab='Currency'; right_click='Fire: --##Crystal1'; tick(4); assert(shown('Fire -> Inventory')); edit_interval=12; tick(5); assert(shown('1 cluster + 0 crystals')); click='Withdraw crystals'; tick(6); assert(#sent==1 and sent[1].id==0x01A); local e={id=0x034,data=wire(0x30,{[4]={0x7D,0xA1,0x0E,1},[8]=190,[0x28]={0x7D,1},[0x2A]=234,[0x2C]={0x69,2}})}; callbacks.packet_in(e); assert(e.blocked and #sent==2 and sent[2].id==0x05B and sent[2].data[9]==12)")
 
 # Named Shami trace remains read-only and cannot capture another NPC's response.
 l=addon_setup(); l.execute(PACKET_HELPERS); run(l, "local lines={}; local t=require('crystal_trace').new({npc_name='shami',label='manual Shami menu',duration=120,now=function() return now end,name=function(i) return i==22 and 'Shami' or 'Ephemeral Moogle' end,write=function(s) lines[#lines+1]=s; return true end}); assert(t:start()); assert(lines[1]=='BEGIN manual Shami menu trace'); t:observe('in',0x034,wire(0x30,{[4]=100,[0x28]=12})); t:observe('out',0x05B,wire(0x14,{[4]=100})); assert(#lines==1); t:observe('in',0x034,wire(0x30,{[4]=101,[0x28]=22,[0x2A]=246,[0x2C]={66,1}})); now=90; t:observe('out',0x05B,wire(0x14,{[4]=101})); assert(#lines==3); now=121; t:observe('out',0x05B,wire(0x14,{[4]=101})); assert(#lines==3 and not t.deadline and #sent==0)")
@@ -652,9 +652,9 @@ l=addon_setup(); run(l, """
 cmd('/im'); tick(0); tick(3); active_tab='Organize'; tick(4)
 click='Copper Ore##OrgItem102'; tick(4.1); toggle_checkbox='Leave this item untouched##Org'; tick(4.2)
 click='Apply item rule'; tick(4.3); assert(current_profile.organization.items['102'].protected and saves==1)
-org_subtab='Preview'; click='View organization plan'; tick(4.4); assert(shown('1 protected item types') and #sent==0)
-cmd('/im refresh'); tick(5); assert(shown('1 protected item types'))
-slots[0][2].Count=11; cmd('/im refresh'); tick(6); assert(not shown('proposed moves'))
+org_subtab='Preview'; click='View organization plan'; tick(4.4); assert(shown('Protected item types: 1') and #sent==0)
+cmd('/im refresh'); tick(5); assert(shown('Protected item types: 1'))
+slots[0][2].Count=11; cmd('/im refresh'); tick(6); assert(not shown('Proposed moves:'))
 local alice=current_profile; local bob={}; switch_profile(bob); cmd('/im'); tick(7)
 assert(not bob.organization.items['102'] and alice.organization.items['102'].protected and #sent==0)
 """)
@@ -789,7 +789,7 @@ def organization_stacking_setup(two_bags=False):
     return l
 
 l=organization_stacking_setup(); run(l, "assert(runner:start(preview())); finish_moves(); assert(not runner:busy() and #stack_sent==0)")
-l=organization_stacking_setup(); run(l, "assert(runner:start(preview(),true)); finish_moves(); assert(#sent==3 and #stack_sent==1 and stack_sent[1][5]==6 and runner:busy()); step(); assert(#stack_sent==1); combine(6); step(); step(); assert(not runner:busy() and #stack_sent==1 and runner.message:find('1 bags confirmed'))")
+l=organization_stacking_setup(); run(l, "assert(runner:start(preview(),true)); finish_moves(); assert(#sent==3 and #stack_sent==1 and stack_sent[1][5]==6 and runner:busy()); step(); assert(#stack_sent==1); combine(6); step(); step(); assert(not runner:busy() and #stack_sent==1 and runner.message:find('1 bag confirmed'))")
 l=organization_stacking_setup(True); run(l, "assert(runner:start(preview(),true)); finish_moves(); assert(#sent==4 and #stack_sent==1 and stack_sent[1][5]==6); combine(6); step(); step(); assert(#stack_sent==2 and stack_sent[2][5]==7); combine(7); step(); step(); assert(not runner:busy() and runner.message:find('2 bags confirmed'))")
 for cause in ["runner:cancel('Stopped by you. No further moves sent.')", "now=20", "rules.items['102']={protected=true}", "env.access[7]=nil", "external_busy=true"]:
     l=organization_stacking_setup(True)
@@ -797,7 +797,7 @@ for cause in ["runner:cancel('Stopped by you. No further moves sent.')", "now=20
 l=organization_stacking_setup(True); run(l, "assert(runner:start(preview(),true)); finish_moves(); owner=nil; step(); combine(6); step(); assert(runner:busy()); owner='Alice:100:1'; step(); step(); assert(not runner:busy() and #stack_sent==1)")
 l=organization_stacking_setup(True); run(l, "stack_error=true; assert(runner:start(preview(),true)); finish_moves(); step(); step(); assert(runner:busy() and #stack_sent==1); runner:cancel(); combine(6); step(); step(); assert(not runner:busy() and #stack_sent==1)")
 l=organization_stacking_setup(); run(l, "assert(runner:start(preview(),true)); step(); runner:cancel(); deliver(); step(); step(); assert(not runner:busy() and #sent==1 and #stack_sent==0)")
-l=organization_stacking_setup(); run(l, "rules.items['101']={protected=true}; slots[6][1]=slots[1][4]; counts[6]=1; assert(runner:start(preview(),true)); finish_moves(); step(); assert(not runner:busy() and #stack_sent==0 and runner.message:find('1 bags skipped'))")
+l=organization_stacking_setup(); run(l, "rules.items['101']={protected=true}; slots[6][1]=slots[1][4]; counts[6]=1; assert(runner:start(preview(),true)); finish_moves(); step(); assert(not runner:busy() and #stack_sent==0 and runner.message:find('1 bag skipped'))")
 l=organization_stacking_setup(); run(l, "rules.items['102']={keep=14}; assert(runner:start(preview(),true)); finish_moves(); assert(#stack_sent==1 and stack_sent[1][5]==0)")
 # No combinable stacks: complete without sending a native stacking request.
 l=organization_stacking_setup(); run(l, "slots[7]={}; counts[7]=0; assert(runner:start(preview(),true)); finish_moves(); step(); assert(not runner:busy() and #stack_sent==0)")
@@ -838,7 +838,7 @@ l=deposit_setup(); run(l, "bag.items={}; loose=9; clusters=0; for i=1,9 do bag.i
 l=addon_setup(); run(l, """
 cmd('/im'); tick(0); tick(3); active_tab='Currency'; click='Plan crystal deposit'; tick(4)
 edit_interval=1; tick(4.1); click='Preview crystal deposit'; tick(4.2)
-assert(shown('1 crystal units selected') and shown('Stored balance is unknown') and shown('Not enough eligible') and #sent==0)
+assert(shown('1 crystal unit selected') and shown('Stored balance is unknown') and shown('Not enough eligible') and #sent==0)
 local bob={}; switch_profile(bob); cmd('/im'); tick(5); assert(not shown('Preview only:') and #sent==0)
 """)
 
@@ -963,7 +963,7 @@ callbacks.packet_in(menu); assert(menu.blocked and #sent==3)
 callbacks.packet_in({id=0x05C,data=wire(0x24,{[4]=101})}); slots[0][3].Count=1
 tick(5); tick(5.3); assert(#sent==5 and sent[4].data[15]==0)
 callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=101})}); tick(5.6); tick(5.9)
-assert(shown('Last crystal deposit: Deposited 1 crystal units') and current_profile.currency_cache.crystals[1]==101 and #sent==5)
+assert(shown('Last crystal deposit: Deposited 1 crystal unit') and current_profile.currency_cache.crystals[1]==101 and #sent==5)
 """)
 
 def batch_deposit_setup(count=17):
@@ -1037,7 +1037,7 @@ resource_data[4096]={Name={[1]='Fire Crystal'},StackSize=12,Type=1}
 slots[0][3]={Id=4096,Count=2,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3
 cmd('/im'); tick(0); tick(3); callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=100})})
 active_tab='Currency'; click='Preview deposit all crystals / clusters'; tick(4)
-assert(buttons['Confirm deposit all'] and shown('1 Inventory stacks in 1 trade(s)') and #sent==0)
+assert(buttons['Confirm deposit all'] and shown('1 Inventory stack in 1 trade') and #sent==0)
 click='Confirm deposit all'; tick(4.1); assert(#sent==1 and sent[1].id==0x10F)
 cmd('/im depositstop'); tick(4.2); callbacks.packet_in({id=0x113,data=wire(0xF8,{[0xE8]=100})})
 assert(#sent==1 and shown('Deposit stopped'))
@@ -1105,7 +1105,7 @@ for direct, routed, first_moves, first_steps in [(50,0,50,50),(51,0,50,50),(0,26
     step(); step(); assert(not runner:busy() and #sent=={first_steps})
     local left=preview(); assert(#left.moves=={direct+routed-first_moves})
     if #left.moves>0 then
-      assert(runner.message:find('deferred') and not runner:start(p))
+      assert(runner.message:find('Deferred moves:') and not runner:start(p))
       assert(runner:start(left)); finish_run(); assert(#sent<=100)
     end
     """)
@@ -1120,8 +1120,61 @@ capacity[0]=80; slots[0]={}; counts[0]=51; capacity[5]=80
 for i=1,51 do slots[0][i]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)} end
 cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={destination=5}
 active_tab='Organize'; org_subtab='Preview'; click='View organization plan'; tick(4)
-assert(buttons['Run organization'] and shown('50 / 50 transfer steps this run') and shown('50 moves this run | 1 deferred | 2 runs') and shown('Later runs - fresh preview') and #sent==0)
+assert(buttons['Run organization'] and shown('50 / 50 transfer steps this run') and shown('Moves this run: 50 | Deferred: 1 | Runs in this preview: 2') and shown('Later runs | Deferred moves: 1') and #sent==0)
 click='Run organization'; tick(4.2); tick(4.3); assert(#sent==1)
 """)
+
+# Live storage-service access is reconstructed, never persisted as a zone entry.
+def storage_access_setup(zone_id=280, name='Green Thumb Moogle'):
+    l=addon_setup()
+    run(l, f"zone={zone_id}; target_name='{name}'; target_distance=9; target_id=123; target_index=12")
+    run(l, """
+    raw_secondary=81
+    inv.GetRawStructure=function() return {ContainerMaxCapacity2={[1]=81,[2]=81,[3]=11,[4]=0,[5]=raw_secondary,[6]=81}} end
+    for _,id in ipairs({1,2,4,9}) do capacity[id]=80; counts[id]=0; slots[id]={} end
+    slots[1][1]={Id=102,Count=1,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[1]=1
+    function access_status()
+      local lines={}; print=function(s) lines[#lines+1]=s end; cmd('/im status'); return table.concat(lines,' | ')
+    end
+    cmd('/im'); tick(0); tick(3)
+    """)
+    return l
+
+for zone_id, name, storage in [(280,'Green Thumb Moogle',True),(26,'Nomad Moogle',False),(53,'Nomad Moogle',False),(247,'Nomad Moogle',False),(248,'Nomad Moogle',False),(249,'Nomad Moogle',False),(250,'Nomad Moogle',False),(252,'Nomad Moogle',False)]:
+    l=storage_access_setup(zone_id,name)
+    run(l, "local status=access_status(); assert(status:find('Recorded: none') and status:find('Safe: access=true') and status:find('Safe 2: access=true') and status:find('Locker: access=true') and status:find('Storage: access="+str(storage).lower()+"') and #sent==0)")
+for mutation in ["target_distance=36.01", "target_name='Moogle'", "target_name='Ephemeral Moogle'", "target_flags=0", "target_id=0", "zone=244", "zoning=1", "player.Name='Other'"]:
+    l=storage_access_setup(); run(l, mutation+"; assert(not access_status():find('Safe: access=true') and #sent==0)")
+for secondary in ['0','nil','82','0/0']:
+    l=storage_access_setup(); run(l, 'raw_secondary='+secondary+"; local status=access_status(); assert(status:find('Locker: access=false') and status:find('Safe: access=true') and #sent==0)")
+l=storage_access_setup(); run(l, "inv.GetRawStructure=function() error('unavailable') end; local s=access_status(); assert(s:find('Locker: access=false') and s:find('Safe: access=true'))")
+l=storage_access_setup(); run(l, "capacity[9]=0; local s=access_status(); assert(s:find('Safe 2: access=false') and s:find('Safe: access=true'))")
+l=storage_access_setup(); run(l, "target_distance=36; assert(access_status():find('Safe: access=true')); target_distance=37; assert(access_status():find('Safe: access=false')); target_distance=9; assert(access_status():find('Safe: access=true'))")
+l=storage_access_setup(); run(l, "inv.GetContainerUpdateCounter=function() counter=counter+1; return counter end; assert(access_status():find('Safe: access=false') and #sent==0)")
+# This nearby name is a level-limit NPC in Ru'Lude, not a storage service.
+l=storage_access_setup(243,'Nomad Moogle'); run(l, "assert(access_status():find('Safe: access=false') and #sent==0)")
+# The normal move popup uses the same recovered access and sends only on request.
+l=storage_access_setup(); run(l, "right_click='Copper Ore##1_1'; tick(4); assert(shown('Quantity') or buttons['Move item']); click='Move item'; tick(4.1); assert(#sent==1)")
+
+# Leaving the service radius during an in-flight route cannot send its next leg.
+l=storage_access_setup(); run(l, """
+current_profile.organization.items['102']={keep=12,destination=4}
+active_tab='Organize'; org_subtab='Preview'; click='View organization plan'; tick(4)
+click='Run organization'; tick(4.2); tick(4.3); assert(#sent==1 and sent[1].data[9]==1 and sent[1].data[10]==0)
+target_distance=37; tick(4.4)
+slots[0][3]=slots[1][1]; slots[1][1]=nil; counts[1]=0; counts[0]=3
+tick(5); tick(5.5); tick(6); assert(#sent==1 and shown('reached Inventory'))
+""")
+l=storage_access_setup(); l.execute(PACKET_HELPERS); run(l, "local a=access_module.new(); local evidence={key='Alice:100:1',kind='garden',capacities={[1]=80,[2]=80,[4]=80,[9]=80},locker_secondary=81}; a:observe(0x00A,zone_packet(true)); local sizes=sizes_packet(); sizes=sizes:sub(1,8)..string.char(0)..sizes:sub(10); a:observe(0x01C,sizes); assert(not a:allowed('Alice:100:1',80,evidence)[4])")
+
+# Retail raw arrays are one-based: Temporary at 4 must never authorize Locker at 5.
+l=storage_access_setup(); run(l, "inv.GetRawStructure=function() return {ContainerMaxCapacity2={[4]=81,[5]=0}} end; local s=access_status(); assert(s:find('Locker: access=false') and #sent==0)")
+
+# Main-window visibility survives unload/reload, without restoring action state.
+l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); callbacks.unload(); assert(current_profile.main_window_open and saves==1); switch_profile(current_profile); tick(4); tick(7); assert(shown('Copper Ore') and #sent==0)")
+l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); cmd('/im'); callbacks.unload(); assert(current_profile.main_window_open==false); switch_profile(current_profile); tick(4); assert(#ui==0)")
+l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); close_main=true; tick(4); callbacks.unload(); assert(current_profile.main_window_open==false); switch_profile(current_profile); tick(5); assert(#ui==0)")
+l=addon_setup(); run(l, "cmd('/im find ore'); tick(0); tick(3); callbacks.unload(); assert(current_profile.main_window_open); local alice=current_profile; local bob={}; settingsmock.name='Bob'; settingsmock.server_id=200; player={Name='Bob',ServerId=200}; switch_profile(bob); tick(4); assert(#ui==0 and alice.main_window_open and not bob.main_window_open)")
+l=addon_setup(); run(l, "cmd('/im'); player=nil; callbacks.unload(); assert(saves==0 and not current_profile.main_window_open)")
 
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

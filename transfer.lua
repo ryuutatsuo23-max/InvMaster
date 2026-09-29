@@ -12,7 +12,7 @@ function M.route(data,choice,destination,access)
         return false, 'Move between Inventory and one storage container.';
     end
     if access[choice.bag]~=true or access[destination]~=true then
-        return false, 'Container access is unavailable. Enter your Mog House again to update access.';
+        return false, 'Container access is unavailable. Move near a supported storage Moogle or enter your Mog House.';
     end
     local source,target=data and data[choice.bag+1],data and data[destination+1];
     if not source or not target or source.state~='Client snapshot' or target.state~='Client snapshot' then
