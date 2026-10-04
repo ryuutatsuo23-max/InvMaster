@@ -53,8 +53,15 @@ remaining work. Zoning or profile changes invalidate sessions and previews;
 uncertain sent requests retain the action lock. Reloading does not resume work.
 
 Manual inventory/shop actions cancel remaining work. Outgoing injections are
-matched against a short-lived queue of our own packet bytes so an unrelated
-addon's appraisal cannot silently replace the item awaiting sale confirmation.
+matched against a short-lived queue of our own operation fields using the
+effective `data_modified` packet (falling back to `data`). Extra buffer bytes
+and reserved padding do not change the operation identity; ID, quantity and
+slot must still match. This prevents self-cancellation while an unrelated
+addon's different appraisal still cancels the item awaiting sale confirmation.
+The source, packet ID and buffer size of an interrupting outgoing action remain
+in the final result for diagnosing client-specific interruptions.
+Ashita's [SDK event contract](https://github.com/AshitaXI/Ashita-v4beta/blob/main/plugins/sdk/Ashita.h)
+defines modified packet data as the effective data after previous plugin changes.
 No native events are blocked, menus opened, or existing shop selections driven.
 
 ## Validation
@@ -63,5 +70,8 @@ Offline LuaJIT tests cover packet layout, full-stack sequencing, marker settings
 mutual exclusion, protected/locked/equipped items, stale previews, context/rule
 changes, late/malformed replies, NPC distance/session expiry, Stop, timeout,
 uncertain sends, external addon interference, and UI child-stack balancing.
-Live normal-merchant sale and drop tests remain pending. Begin with one explicitly
-marked low-value stack for each action and check the final Inventory result.
+The user observed one successful drop followed by a stopped four-stack run,
+and a cancelled sale, on v0.22.0. v0.22.1 corrects outgoing packet matching and
+adds cancellation reasons. Offline regression tests simulate effective buffers,
+reserved padding, two-stack drop/sale completion and conflicting injected
+appraisals. Live multi-stack drop and merchant sale confirmation remain pending.
