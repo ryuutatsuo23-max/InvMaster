@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.20.15';
+addon.version = '0.21.0';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -418,7 +418,7 @@ local function render_items()
     categories.render(imgui,profile.categories,'Items',settings.save);
     local rows, count=model.search(snapshot, query[1], selected,profile.categories);
     imgui.Text(('%d matching slots | %d items'):format(#rows, count));
-    imgui.TextWrapped('Right-click an item for transfer and Stack bag options.');
+    imgui.TextWrapped('Right-click an item to mark it for selling, transfer it, or stack its bag.');
     local open_actions=false;
     if imgui.BeginChild('ItemsBody', {0,0}) then
         local _, height=imgui.GetContentRegionAvail();
@@ -439,10 +439,13 @@ local function render_items()
             for _, row in ipairs(rows) do
                 imgui.TableNextRow(); imgui.TableNextColumn();
                 local label=row.item.name .. '##' .. row.bag.id .. '_' .. row.item.slot;
+                local item_x=imgui.GetCursorPosX();
                 imgui.Selectable(label, choice~=nil and choice.bag==row.bag.id and choice.slot==row.item.slot);
                 if imgui.IsItemClicked(1) and not busy() then
                     select_item(row); open_actions=true;
                 end
+                local rule=profile.organization.items[tostring(row.item.id)];
+                if rule and rule.sell then imgui.SameLine(item_x+imgui.CalcTextSize(row.item.name)+8); imgui.TextColored({1.0,0.75,0.3,1.0},'[sell]') end
                 imgui.TableNextColumn(); imgui.Text(row.bag.name);
                 imgui.TableNextColumn(); imgui.Text(tostring(row.item.count));
                 imgui.TableNextColumn(); imgui.Text(tostring(row.item.slot));
@@ -458,6 +461,15 @@ local function render_items()
     if imgui.BeginPopup('Item actions') then
         if not choice or busy() then imgui.CloseCurrentPopup();
         else
+            local id=tostring(choice.id);
+            local rule=profile.organization.items[id];
+            if imgui.Button(rule and rule.sell and 'Unmark for selling' or 'Mark for selling') then
+                rule=rule or {name=choice.name};
+                rule.sell=not rule.sell; profile.organization.items[id]=rule;
+                organization_view:reset(profile.organization); save_organization();
+            end
+            imgui.TextWrapped('Sell-marked items go to Inventory through Organize > Preview > Run. Nothing is sold or discarded. Untouched rules take priority.');
+            imgui.Separator();
             custom_view:popup(profile.customization,choice,settings.save);
             if current_access()[choice.bag] and transfers.bags[choice.bag] then
                 if imgui.Button('Stack bag') then

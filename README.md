@@ -50,6 +50,12 @@ individual item destinations override them. Click **Apply** to save a rule, then
 Choose **Inventory** as the destination to gather all copies of an item there,
 for example before selling. A keep quantity is not required.
 
+Right-click an item and choose **Mark for selling**, or enable it under **Item rules**.
+Marked items show **[sell]** and gather into Inventory when you preview and run
+organization. Inaccessible bags or insufficient space appear as notices; preview
+again when available. Nothing is sold or discarded automatically. **Leave untouched**
+takes priority. Unmarking restores the previous destination and keep settings.
+
 Saved item rules have a green **[rule]** marker. Click **Run organization** to
 carry out the reviewed moves, one confirmed transfer at a time. Plans are limited
 to 50 transfer steps per run; larger plans are split without changing your rules.

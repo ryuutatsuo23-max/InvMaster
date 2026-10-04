@@ -142,3 +142,12 @@ are grouped by identical text for display only; the reviewed plan is unchanged.
 On 2026-09-30 the user confirmed the progress UI looked good. Screenshots show
 1/6 and 4/6 confirmed moves, then a completed 6/6 run after Mog House reload.
 The reviewed plan included Storage Slip 22 from Satchel to Safe 2 via Inventory.
+
+## Sell markers
+
+The per-character item rule `sell=true` overrides destination and keep quantity
+with Inventory gathering, after the untouched guard. It applies to all copies
+of the item ID. The original fields remain stored, and unmarking restores their
+behavior. The marker participates in rule signatures, so a reviewed plan becomes
+stale when it changes. Marking never sends transfers; the existing preview and
+confirmed runner retain access, space, identity and cancellation checks.
