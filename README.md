@@ -50,8 +50,9 @@ individual item destinations override them. Click **Apply** to save a rule, then
 Choose **Inventory** as the destination to gather all copies of an item there,
 for example before selling. A keep quantity is not required.
 
-Right-click an item and choose **Mark for selling**, or enable it under **Item rules**.
-Marked items show **[sell]** and gather into Inventory when you preview and run
+Right-click an item and choose **Mark for selling** or **Mark for dropping**,
+or enable one under **Item rules**. Marked items show **[sell]** or **[drop]**
+and gather into Inventory when you preview and run
 organization. Inaccessible bags or insufficient space appear as notices; preview
 again when available. Nothing is sold or discarded automatically. **Leave untouched**
 takes priority. Unmarking restores the previous destination and keep settings.
@@ -68,9 +69,32 @@ stacks after all moves finish. It starts off for each new preview and skips bags
 containing items marked **Leave this item untouched**.
 
 Rules start empty, save per character and cover all copies of an item ID.
-Protection applies to organization, not your existing manual transfer controls.
+Protection applies to organization and Sell / Drop, not your manual transfer controls.
 Plans clear when bag contents or applied rules change. Nothing runs automatically.
 See [organization details](docs/organization.md).
+
+## Sell / Drop (v0.22.0)
+
+Markers save per character and apply to future copies, even after selling or
+dropping every current copy. Sell and Drop are mutually exclusive. Use Organize
+first to gather marked items from accessible bags, then open **Sell / Drop**.
+
+- **Sell:** open a normal NPC merchant's shop, stay within 6 yalms, and leave it
+  open. Click **Preview sell marked items**, review the list, then
+  **Confirm SELL listed items** to sell at that NPC's prices. Guild shops are not
+  supported. Reopen the shop if its session expires or the addon was reloaded.
+- **Drop:** click **Preview drop marked items**, review the list, then
+  **Confirm DROP listed items**. This permanently discards every listed stack.
+
+Only reviewed stacks already in Inventory are processed, one at a time.
+Equipped, locked, unreadable and untouched items are skipped. Items that cannot
+be sold are never changed to Drop automatically. **Stop disposal** cancels
+remaining items; an already-sent request still needs confirmation. An uncertain
+outcome locks further actions without retrying. Check Inventory before reloading.
+Do not manually buy, sell or rearrange items during a run.
+
+These actions have offline coverage; live sale and drop confirmation are still
+pending. See [implementation and validation details](docs/disposal.md).
 
 ## Crystals, seals and crests
 

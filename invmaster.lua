@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.21.0';
+addon.version = '0.22.0';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -51,13 +51,13 @@ local shami_controller;
 local withdraw_module=require 'withdraw';
 local withdrawer;
 local mover,sorter,sort_request;
-local preparer,organizer;
-local function base_busy() return (crystal_depositor and crystal_depositor.pending) or (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
+local preparer,organizer,disposer;
+local function base_busy() return (disposer and disposer:busy()) or (crystal_depositor and crystal_depositor.pending) or (shami_controller and shami_controller.pending) or (crystal_withdrawer and crystal_withdrawer.pending) or (withdrawer and (withdrawer.active or withdrawer.pending)) or (mover and mover.pending) or (sorter and sorter.pending) or sort_request~=nil end
 local function other_busy() return base_busy() or (organizer and organizer:busy()) end
 local function busy() return other_busy() or (preparer and preparer:busy()) end
 local function clear_action_messages()
     if busy() then return end -- Never hide an uncertain operation's warning or lock.
-    for _,controller in ipairs({mover,sorter,withdrawer,preparer,crystal_withdrawer,shami_controller,organizer,crystal_depositor}) do
+    for _,controller in ipairs({mover,sorter,withdrawer,preparer,crystal_withdrawer,shami_controller,organizer,crystal_depositor,disposer}) do
         controller.message=nil;
     end
 end
@@ -75,6 +75,7 @@ local selected, snapshot, last_read, next_read;
 local context_key;
 local status = 'Waiting for character data.';
 local function reset()
+    if disposer then disposer:reset() end
     if crystal_depositor then crystal_depositor:cancel() end
     if organizer then organizer:cancel('Stopped: character context reset. No further moves sent.') end
     organization_view:invalidate();
@@ -271,7 +272,58 @@ organization_env.busy=function() return base_busy() or preparer:busy() end;
 organization_env.send_stack=function(packet) return AshitaCore:GetPacketManager():AddOutgoingPacket(0x03A,packet); end;
 organizer=require('organization_run').new(organization_env);
 local function save_organization()
-    organizer:cancel('Stopped: saved rules changed. No further moves sent.'); settings.save();
+    organizer:cancel('Stopped: saved rules changed. No further moves sent.');
+    if disposer then disposer:cancel() end
+    settings.save();
+end
+disposer=require('disposal').new({
+    now=os.clock,rules=function() return profile.organization end,
+    context=function(mode)
+        if mode=='drop' then return transfer_context() end
+        local key=crystal_key(); if not key then return nil end
+        local mm=AshitaCore:GetMemoryManager(); local index=mm:GetParty():GetMemberTargetIndex(0);
+        local state=mm:GetEntity():GetStatus(index); local hp=mm:GetEntity():GetHPPercent(index);
+        if (state==0 or state==4) and type(hp)=='number' and hp>0 and hp<=100 then return key end
+    end,
+    busy=function()
+        return (organizer and organizer:busy()) or (preparer and preparer:busy()) or (mover and mover.pending)
+            or (sorter and sorter.pending) or sort_request~=nil or (withdrawer and (withdrawer.active or withdrawer.pending))
+            or crystal_withdrawer.pending or crystal_depositor.pending or shami_controller.pending;
+    end,
+    scan=function() return model.scan(AshitaCore:GetMemoryManager():GetInventory(),AshitaCore:GetResourceManager()) end,
+    equipped=equipped,
+    npc=function(index,id)
+        local e=AshitaCore:GetMemoryManager():GetEntity(); local d=e:GetDistance(index); local f=e:GetRenderFlags0(index);
+        return e:GetServerId(index)==id and type(d)=='number' and d>=0 and d<=36
+            and type(f)=='number' and math.floor(f/0x200)%2==1 and math.floor(f/0x4000)%2==0;
+    end,
+    send=function(id,packet) return AshitaCore:GetPacketManager():AddOutgoingPacket(id,packet) end,
+    changed=function() next_read=0; organization_view:invalidate() end,
+});
+local function render_disposal()
+    imgui.TextWrapped('Only marked items already in Inventory are listed here. Use Organize first to gather items from other bags.');
+    if not busy() then
+        if imgui.Button('Preview sell marked items') then disposer:plan('sell') end
+        imgui.SameLine();
+        if imgui.Button('Preview drop marked items') then disposer:plan('drop') end
+    end
+    imgui.TextWrapped('Selling requires an open normal NPC shop. Stay within 6 yalms and leave the shop open.');
+    local p=disposer.preview;
+    if p then
+        imgui.Separator();
+        imgui.Text(('%s preview: %d Inventory stacks'):format(p.mode=='drop' and 'Drop' or 'Sell',#p.rows));
+        imgui.TextWrapped(p.mode=='drop' and 'Confirm permanently discards every listed stack. Items cannot be recovered by InvMaster.' or 'Confirm sells every listed stack at the NPC price. Each stack receives a fresh price check.');
+        if #p.rows>0 and not p.blocked and not busy() and imgui.Button(p.mode=='drop' and 'Confirm DROP listed items' or 'Confirm SELL listed items') then disposer:start() end
+        imgui.SameLine(); if imgui.Button('Cancel disposal preview') then disposer.preview=nil end
+        if disposer.preview then
+            if imgui.BeginChild('DisposalPreview',{0,0}) then
+                for _,item in ipairs(p.rows) do imgui.TextWrapped(('%d x %s - Inventory slot %d'):format(item.count,item.name,item.slot)) end
+                if #p.rows==0 then imgui.TextWrapped('No eligible marked items in Inventory.') end
+                for _,notice in ipairs(p.notices) do imgui.TextWrapped('Skipped: '..notice) end
+            end
+            imgui.EndChild();
+        end
+    end
 end
 local withdraw_ui={
     available=function(id) local _,total=withdraw_module.sources(snapshot,id,withdraw_env); return total end,
@@ -418,7 +470,7 @@ local function render_items()
     categories.render(imgui,profile.categories,'Items',settings.save);
     local rows, count=model.search(snapshot, query[1], selected,profile.categories);
     imgui.Text(('%d matching slots | %d items'):format(#rows, count));
-    imgui.TextWrapped('Right-click an item to mark it for selling, transfer it, or stack its bag.');
+    imgui.TextWrapped('Right-click an item to mark it for Sell or Drop, transfer it, or stack its bag.');
     local open_actions=false;
     if imgui.BeginChild('ItemsBody', {0,0}) then
         local _, height=imgui.GetContentRegionAvail();
@@ -445,7 +497,7 @@ local function render_items()
                     select_item(row); open_actions=true;
                 end
                 local rule=profile.organization.items[tostring(row.item.id)];
-                if rule and rule.sell then imgui.SameLine(item_x+imgui.CalcTextSize(row.item.name)+8); imgui.TextColored({1.0,0.75,0.3,1.0},'[sell]') end
+                if rule and (rule.sell or rule.drop) then imgui.SameLine(item_x+imgui.CalcTextSize(row.item.name)+8); imgui.TextColored({1.0,0.75,0.3,1.0},rule.drop and '[drop]' or '[sell]') end
                 imgui.TableNextColumn(); imgui.Text(row.bag.name);
                 imgui.TableNextColumn(); imgui.Text(tostring(row.item.count));
                 imgui.TableNextColumn(); imgui.Text(tostring(row.item.slot));
@@ -465,10 +517,14 @@ local function render_items()
             local rule=profile.organization.items[id];
             if imgui.Button(rule and rule.sell and 'Unmark for selling' or 'Mark for selling') then
                 rule=rule or {name=choice.name};
-                rule.sell=not rule.sell; profile.organization.items[id]=rule;
+                rule.sell=not rule.sell; if rule.sell then rule.drop=false end; profile.organization.items[id]=rule;
                 organization_view:reset(profile.organization); save_organization();
             end
-            imgui.TextWrapped('Sell-marked items go to Inventory through Organize > Preview > Run. Nothing is sold or discarded. Untouched rules take priority.');
+            if imgui.Button(rule and rule.drop and 'Unmark for dropping' or 'Mark for dropping') then
+                rule=rule or {name=choice.name}; rule.drop=not rule.drop; if rule.drop then rule.sell=false end;
+                profile.organization.items[id]=rule; organization_view:reset(profile.organization); save_organization();
+            end
+            imgui.TextWrapped('Marked items gather through Organize. Sell / Drop has separate previews and confirmations. Untouched rules take priority.');
             imgui.Separator();
             custom_view:popup(profile.customization,choice,settings.save);
             if current_access()[choice.bag] and transfers.bags[choice.bag] then
@@ -518,6 +574,8 @@ local function render()
             if imgui.Button('Refresh') then next_read=0 end
             imgui.SameLine(); imgui.TextWrapped(('Auto-refresh: %ds | '):format(profile.refresh_seconds) .. (last_read and ('Last read: %ds ago'):format(math.max(0,math.floor(os.clock()-last_read))) or 'No snapshot'));
             imgui.TextWrapped('Transfers between accessible bags; storage-to-storage moves go via Inventory.');
+            action_message('disposal',disposer,disposer:busy());
+            if disposer:busy() and imgui.Button('Stop disposal') then disposer:cancel() end
             action_message('transfer',mover,mover.pending);
             action_message('Shami action',shami_controller,shami_controller.pending);
             action_message('crystal withdrawal',crystal_withdrawer,crystal_withdrawer.pending);
@@ -540,7 +598,7 @@ local function render()
             if preparer.active and imgui.Button('Stop preparation') then preparer:cancel() end
             if withdrawer.active and imgui.Button('Stop withdrawal') then withdrawer:cancel() end
             action_message('stacking action',sorter,sorter.pending);
-            if not busy() and (mover.message or sorter.message or withdrawer.message or preparer.message or crystal_withdrawer.message or crystal_depositor.message or shami_controller.message or organizer.message) then
+            if not busy() and (mover.message or sorter.message or withdrawer.message or preparer.message or crystal_withdrawer.message or crystal_depositor.message or shami_controller.message or organizer.message or disposer.message) then
                 if imgui.Button('Clear result') then clear_action_messages() end
             end
             if imgui.BeginTabBar('MainTabs') then
@@ -554,6 +612,7 @@ local function render()
                     imgui.EndTabItem();
                 end
                 if imgui.BeginTabItem('Currency') then currency.render(currency_data,crystal_ui,shami_ui,currency_refresh); imgui.EndTabItem(); end
+                if imgui.BeginTabItem('Sell / Drop') then render_disposal(); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Storage') then render_storage(); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Settings') then
                     local seconds={profile.refresh_seconds};
@@ -593,6 +652,7 @@ ashita.events.register('unload', 'invmaster_window_state', function()
 end);
 ashita.events.register('packet_in', 'invmaster_access', function(e)
     if e.injected or e.blocked then return end
+    disposer:incoming(e);
     crystal_trace:observe('in',e.id,e.data);
     shami_trace:observe('in',e.id,e.data);
     crystal_withdrawer:observe(e);
@@ -612,6 +672,7 @@ ashita.events.register('packet_in', 'invmaster_access', function(e)
     bag_access:observe(e.id,e.data);
 end);
 ashita.events.register('packet_out','invmaster_crystal_trace',function(e)
+    disposer:outgoing(e);
     if e.id==0x096 then preparer:cancel() end
     if not e.injected and not e.blocked then crystal_trace:observe('out',e.id,e.data) end
     if not e.injected and not e.blocked then shami_trace:observe('out',e.id,e.data) end
@@ -729,6 +790,7 @@ end);
 ashita.events.register('d3d_present', 'invmaster_present', function()
     local ok, err=pcall(poll);
     if not ok then snapshot=nil; last_read=nil; next_read=os.clock()+profile.refresh_seconds; status='Inventory read failed; retrying.'; end
+    disposer:tick();
     mover:tick();
     sorter:tick();
     withdrawer:tick();

@@ -27,7 +27,7 @@ function M.new()
     function self:invalidate() self.preview=nil end
     local function edit(id,name,data)
         local rule=data.items[tostring(id)] or {};
-        self.id=id; self.name=name; self.draft={keep={rule.keep or 0},use_keep={rule.keep~=nil},protected={rule.protected==true},sell={rule.sell==true},destination=rule.destination};
+        self.id=id; self.name=name; self.draft={keep={rule.keep or 0},use_keep={rule.keep~=nil},protected={rule.protected==true},sell={rule.sell==true},drop={rule.drop==true},destination=rule.destination};
     end
     function self:render(snapshot,data,save,env)
         local access={}; for id=0,16 do access[#access+1]=tostring(env.access[id]==true) end
@@ -44,7 +44,7 @@ function M.new()
         for id,r in pairs(data.items) do candidates[tonumber(id)]=r.name end
         local ids={}; for id in pairs(candidates) do ids[#ids+1]=id end; table.sort(ids);
         local _,available_height=imgui.GetContentRegionAvail();
-        local editor_height=imgui.GetFrameHeightWithSpacing()*10+imgui.GetTextLineHeightWithSpacing()*4;
+        local editor_height=imgui.GetFrameHeightWithSpacing()*11+imgui.GetTextLineHeightWithSpacing()*4;
         local list_height=self.draft and math.max(80,available_height-math.min(editor_height,available_height*0.65)) or math.max(80,available_height);
         if imgui.BeginChild('OrganizationItems',{0,list_height}) then
             for _,id in ipairs(ids) do
@@ -55,7 +55,7 @@ function M.new()
                     if data.items[tostring(id)] then
                         local width=imgui.CalcTextSize(name);
                         imgui.SameLine(start_x+width+8);
-                        imgui.TextColored({0.35,1.0,0.45,1.0},data.items[tostring(id)].sell and '[sell]' or '[rule]');
+                        imgui.TextColored({0.35,1.0,0.45,1.0},data.items[tostring(id)].drop and '[drop]' or (data.items[tostring(id)].sell and '[sell]' or '[rule]'));
                     end
                 end
             end
@@ -66,8 +66,9 @@ function M.new()
             local d=self.draft;
             imgui.Text('Item rule: '..self.name);
             imgui.Checkbox('Leave this item untouched##Org',d.protected);
-            imgui.Checkbox('Mark for selling##Org',d.sell);
-            if d.sell[1] then imgui.TextWrapped('Gather all accessible copies into Inventory when you run organization. Untouched takes priority. Nothing is sold or discarded. Other settings below resume when unmarked.') end
+            if imgui.Checkbox('Mark for selling##Org',d.sell) and d.sell[1] then d.drop[1]=false end
+            if imgui.Checkbox('Mark for dropping##Org',d.drop) and d.drop[1] then d.sell[1]=false end
+            if d.sell[1] or d.drop[1] then imgui.TextWrapped('Gather all accessible copies into Inventory when you run organization. Untouched takes priority. Selling or dropping needs a separate preview and confirmation. Other settings below resume when unmarked.') end
             imgui.Checkbox('Keep a quantity in Inventory##Org',d.use_keep);
             if d.use_keep[1] then
                 imgui.SetNextItemWidth(120);
@@ -78,7 +79,7 @@ function M.new()
             d.destination=destination('Destination##Org',d.destination,'Use category rule');
             imgui.TextWrapped('Inventory gathers all copies, regardless of keep quantity. Other destinations receive extras above the keep quantity. Untouched takes priority. These rules do not block manual moves.');
             if imgui.Button('Apply item rule') then
-                data.items[tostring(self.id)]={name=self.name,keep=d.use_keep[1] and d.keep[1] or nil,destination=d.destination,protected=d.protected[1],sell=d.sell[1]};
+                data.items[tostring(self.id)]={name=self.name,keep=d.use_keep[1] and d.keep[1] or nil,destination=d.destination,protected=d.protected[1],sell=d.sell[1],drop=d.drop[1]};
                 self:invalidate(); save();
             end
             imgui.SameLine();

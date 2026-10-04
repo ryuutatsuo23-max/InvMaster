@@ -64,8 +64,10 @@ def addon_setup():
     lua.globals().ownership_source=(ROOT/'ownership_view.lua').read_text()
     lua.globals().organization_source=(ROOT/'organization.lua').read_text()
     lua.globals().organization_view_source=(ROOT/'organization_view.lua').read_text()
+    lua.globals().disposal_source=(ROOT/'disposal.lua').read_text(encoding='utf-8')
     lua.globals().organization_run_source=(ROOT/'organization_run.lua').read_text()
     lua.execute('''
+    package.preload.disposal=function() return assert(loadstring(disposal_source))() end
     package.preload.common=function() end; T=function(t) return t end
     package.preload.inventory_model=function() return model end
     package.preload.transfer=function() return transfer_module end
@@ -1215,4 +1217,82 @@ l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); current_profile.organizat
 l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); active_tab='Organize'; click='Copper Ore##OrgItem102'; tick(4); toggle_checkbox='Mark for selling##Org'; tick(4.1); click='Apply item rule'; tick(4.2); assert(current_profile.organization.items['102'].sell and saves==1 and #sent==0); local alice=current_profile; switch_profile(alice); assert(current_profile.organization.items['102'].sell); local bob={}; switch_profile(bob); assert(not bob.organization.items['102'] and alice.organization.items['102'].sell)")
 l=organization_run_setup(); run(l, "rules.items['102']={sell=true}; local p=preview(); assert(#p.moves==1 and p.moves[1].destination==0); assert(runner:start(p)); step(); assert(#sent==1); deliver(); step(); step(); assert(not runner:busy() and runner.message:find('1/1 move confirmed'))")
 
+
+# Inventory disposal: mocks capture packets; these tests never contact the game.
+def disposal_setup(mode='drop'):
+    l=addon_setup(); l.execute(PACKET_HELPERS); l.globals().disposal_mode=mode
+    run(l, """
+    owner='Alice:100:1'; external_busy=false; near=true; worn=false; changes=0;
+    resource_data[102].Flags=0; rules={items={['102']={[disposal_mode]=true}}};
+    de={now=function() return now end,context=function() return owner end,
+      rules=function() return rules end,busy=function() return external_busy end,
+      equipped=function() return worn end,npc=function(i,id) return near and i==12 and id==100 end,
+      scan=function() return model.scan(inv,resources) end,
+      changed=function() changes=changes+1 end,
+      send=function(id,data) sent[#sent+1]={id=id,data=data}; if send_error then error('uncertain') end; if send_false then return false end end};
+    d=require('disposal').new(de);
+    function open_shop()
+      d:outgoing({id=0x01A,data=wire(0x10,{[4]=100,[8]=12})});
+      d:incoming({id=0x03C,data=wire(16)});
+    end
+    function quote(price,slot,kind,count)
+      d:incoming({id=0x03D,data=wire(16,{[4]=price or 10,[8]=slot or 2,[9]=kind or 0,[12]=count or 1})});
+    end
+    function dtick() now=now+0.3; d:tick() end
+    function remove_stack() slots[0][2]=nil; counts[0]=1 end
+    function begin() assert(d:plan(disposal_mode)); assert(#d.preview.rows==1); assert(d:start()); assert(#sent==0); dtick() end
+    """)
+    if mode=='sell': run(l,'open_shop()')
+    return l
+
+l=disposal_setup(); run(l, "begin(); assert(#sent==1 and sent[1].id==0x028 and #sent[1].data==12 and sent[1].data[5]==12 and sent[1].data[9]==0 and sent[1].data[10]==2); dtick(); assert(d:busy() and changes==0); remove_stack(); dtick(); assert(d:busy()); dtick(); assert(not d:busy() and changes==1 and d.message:find('1/1 stacks dropped') and slots[0][1].Id==101)")
+l=disposal_setup('sell'); run(l, "begin(); assert(#sent==1 and sent[1].id==0x084 and #sent[1].data==12 and sent[1].data[5]==12 and sent[1].data[9]==102 and sent[1].data[11]==2); quote(); assert(#sent==2 and sent[2].id==0x085 and #sent[2].data==8 and sent[2].data[5]==1); remove_stack(); dtick(); dtick(); assert(d:busy() and changes==0); quote(120,2,1,12); dtick(); dtick(); assert(not d:busy() and changes==1 and d.message:find('1/1 stacks sold'))")
+for mode in ['sell','drop']:
+    l=disposal_setup(mode); run(l,"assert(d:plan(disposal_mode) and #sent==0); d:cancel(); assert(not d:start() and #sent==0)")
+    l=disposal_setup(mode); run(l,"rules.items['102'].protected=true; assert(d:plan(disposal_mode)); assert(#d.preview.rows==0 and #d.preview.notices==1 and not d:start() and #sent==0)")
+    for mutation in ["slots[0][2].Count=11", "slots[0][2].Extra=string.rep('x',28)", "slots[0][2].Id=101", "rules.items['102'].protected=true", "owner='Bob:200:1'", "external_busy=true", "worn=true"]:
+        l=disposal_setup(mode); run(l,"assert(d:plan(disposal_mode)); "+mutation+"; if d:start() then dtick() end; assert(#sent==0)")
+    for mutation in ["slots[0][2].Flags=5", "slots[0][2].Price=1", "slots[0][2].Extra='short'", "resource_data[102].StackSize=0", "worn=true"]:
+        l=disposal_setup(mode); run(l,mutation+"; assert(d:plan(disposal_mode) and #d.preview.rows==0 and not d:start() and #sent==0)")
+    l=disposal_setup(mode); run(l,"begin(); "+("quote();" if mode=='sell' else "")+" now=10; dtick(); local n=#sent; d:cancel(); dtick(); assert(d:busy() and #sent==n and not d:plan(disposal_mode)); d:reset(); dtick(); assert(d:busy() and #sent==n)")
+    l=disposal_setup(mode); run(l,"assert(d:plan(disposal_mode) and d:start()); de.scan=function() owner='Bob:200:1'; return model.scan(inv,resources) end; dtick(); assert(#sent==0 and not d:busy())")
+    l=disposal_setup(mode); run(l,"slots[0][3]={Id=102,Count=4,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3; assert(d:plan(disposal_mode) and #d.preview.rows==2 and d:start()); dtick(); "+("quote();" if mode=='sell' else "")+" local n=#sent; d:cancel(); slots[0][2]=nil; counts[0]=2; "+("quote(120,2,1,12);" if mode=='sell' else "")+" dtick(); dtick(); dtick(); assert(not d:busy() and changes==1 and #sent==n and slots[0][3].Count==4)")
+    l=disposal_setup(mode); run(l,"slots[0][3]={Id=102,Count=4,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3; assert(d:plan(disposal_mode) and #d.preview.rows==2 and d:start()); dtick(); "+("quote(); quote(120,2,1,12);" if mode=='sell' else "")+" slots[0][2]=nil; counts[0]=2; dtick(); dtick(); assert(changes==1); dtick(); "+("quote(10,3); quote(40,3,1,4);" if mode=='sell' else "")+" slots[0][3]=nil; counts[0]=1; dtick(); dtick(); assert(not d:busy() and changes==2 and #sent=="+('4' if mode=='sell' else '2')+")")
+for mutation in ["d.shop=nil", "near=false", "now=121"]:
+    l=disposal_setup('sell'); run(l,mutation+"; assert(d:plan('sell') and d.preview.blocked and not d:start() and #sent==0)")
+for mutation in ["now=9", "near=false", "rules.items['102'].sell=false", "slots[0][2].Count=11", "owner=nil", "external_busy=true", "worn=true"]:
+    l=disposal_setup('sell'); run(l,"begin(); "+mutation+"; quote(); assert(#sent==1 and not d:busy())")
+for reply in ["quote(0)","quote(10,1)","quote(10,2,0,0)","quote(10,2,0,13)"]:
+    l=disposal_setup('sell'); run(l,"begin(); "+reply+"; assert(#sent==1 and not d:busy())")
+l=disposal_setup('sell'); run(l,"begin(); d:incoming({id=0x03D,data='short'}); now=9; dtick(); quote(); assert(#sent==1 and not d:busy())")
+l=disposal_setup('sell'); run(l,"begin(); d:incoming({id=0x03D,data=wire(16,{[4]=10,[8]=2,[12]=1}),injected=true}); d:incoming({id=0x03D,data=wire(16,{[4]=10,[8]=2,[12]=1}),blocked=true}); assert(#sent==1 and d.pending.stage=='quote')")
+l=disposal_setup('sell'); run(l,"resource_data[102].Flags=4096; assert(d:plan('sell') and #d.preview.rows==0 and not d:start()); assert(rules.items['102'].sell and not rules.items['102'].drop and #sent==0)")
+l=disposal_setup(); run(l,"resource_data[102].Flags=4096; begin(); assert(sent[1].id==0x028)")
+for failure in ["send_error=true", "send_false=true"]:
+    l=disposal_setup('sell'); run(l,failure+"; begin(); quote(); assert(#sent==1 and not d:busy())")
+    l=disposal_setup(); run(l,failure+"; begin(); now=10; dtick(); assert(d:busy() and #sent==1)")
+    l=disposal_setup('sell'); run(l,"begin(); "+failure+"; quote(); now=10; dtick(); assert(d:busy() and #sent==2)")
+for packet in [0x05B,0x00C,0x084,0x085,0x028,0x029,0x03A,0x050,0x096]:
+    l=disposal_setup('sell'); run(l,f"begin(); d:outgoing({{id={packet},data=wire(16)}}); quote(); assert(#sent==1 and not d:busy() and not d.shop)")
+l=disposal_setup('sell'); run(l,"d:reset(); d:incoming({id=0x03C,data=wire(16)}); assert(not d.shop); d:outgoing({id=0x01A,data=wire(16,{[4]=100,[8]=12}),blocked=true}); d:incoming({id=0x03C,data=wire(16)}); assert(not d.shop)")
+l=disposal_setup(); run(l,"slots[0][2]=nil; counts[0]=1; slots[1][4].Id=102; assert(d:plan('drop') and #d.preview.rows==0 and not d:start() and #sent==0)")
+l=disposal_setup(); run(l,"rules.items['102'].drop=false; assert(d:plan('drop') and #d.preview.rows==0); rules.items['102'].drop=true; assert(d:plan('drop') and #d.preview.rows==1); assert(#sent==0)")
+l=disposal_setup(); run(l,"begin(); d:reset(); remove_stack(); dtick(); dtick(); assert(not d:busy() and #sent==1 and changes==1)")
+l=disposal_setup(); run(l,"begin(); slots[0][2].Extra=string.rep('x',28); now=10; dtick(); assert(d:busy() and changes==0 and #sent==1)")
+
+# Drop markers preserve ordinary rules, survive settings reload, and exclude Sell.
+l=organization_setup(); run(l,"rules.items['102']={drop=true,keep=99,destination=6}; local p=org.plan(data,rules,env); assert(#p.moves==1 and p.moves[1].destination==0 and #p.blocked==0); rules.items['102'].protected=true; assert(#org.plan(data,rules,env).moves==0); local n=org.normalize({items={['102']={drop=true,sell=true}}}); assert(n.items['102'].drop and not n.items['102'].sell)")
+l=addon_setup(); run(l,"cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={sell=true,keep=5,destination=6}; right_click='Copper Ore##0_2'; tick(4); click='Mark for dropping'; tick(4.1); local r=current_profile.organization.items['102']; assert(r.drop and not r.sell and r.keep==5 and r.destination==6 and saves==1 and #sent==0); tick(4.2); assert(shown('[drop]')); switch_profile(current_profile); assert(current_profile.organization.items['102'].drop)")
+l=addon_setup(); run(l,"cmd('/im'); tick(0); tick(3); active_tab='Organize'; click='Copper Ore##OrgItem102'; tick(4); toggle_checkbox='Mark for selling##Org'; tick(4.1); toggle_checkbox='Mark for dropping##Org'; tick(4.2); click='Apply item rule'; tick(4.3); assert(current_profile.organization.items['102'].drop and not current_profile.organization.items['102'].sell and saves==1 and #sent==0)")
+l=addon_setup(); run(l,"cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={drop=true}; active_tab='Sell / Drop'; click='Preview drop marked items'; tick(4); assert(shown('12 x Copper Ore') and #sent==0 and buttons['Confirm DROP listed items']); hide_child=true; tick(4.1); hide_child=false; click='Cancel disposal preview'; tick(4.2); assert(#sent==0 and not shown('12 x Copper Ore'))")
+l=addon_setup(); run(l,"cmd('/im'); tick(0); tick(3); current_profile.organization.items['102']={drop=true}; active_tab='Sell / Drop'; click='Preview drop marked items'; tick(4); click='Confirm DROP listed items'; tick(4.1); tick(4.4); assert(#sent==1 and sent[1].id==0x028 and buttons['Stop disposal']); slots[0][2]=nil; counts[0]=1; tick(4.8); tick(5.2); assert(shown('1/1 stacks dropped confirmed') and #sent==1)")
+
+
+# Other addons cannot change the merchant selection behind our confirmation.
+l=disposal_setup('sell'); run(l,"begin(); local a=sent[1]; d:outgoing({id=a.id,data=string.char(unpack(a.data)),injected=true}); assert(d:busy() and d.shop); quote(); local b=sent[2]; d:outgoing({id=b.id,data=string.char(unpack(b.data)),injected=true}); assert(d:busy()); quote(120,2,1,12); remove_stack(); dtick(); dtick(); assert(not d:busy() and changes==1)")
+l=disposal_setup('sell'); run(l,"begin(); d:outgoing({id=0x084,data=wire(12,{[4]=1,[8]=101,[10]=1}),injected=true}); quote(); assert(not d:busy() and #sent==1)")
+l=disposal_setup('sell'); run(l,"de.send=function(id,data) sent[#sent+1]={id=id,data=data}; d:outgoing({id=id,data=string.char(unpack(data)),injected=true}) end; begin(); quote(); assert(#sent==2 and d:busy())")
+l=disposal_setup(); run(l,"begin(); slots[0][2].Extra=string.rep('x',28); dtick(); dtick(); assert(d:busy() and changes==0); now=10; dtick(); assert(d:busy() and #sent==1)")
+
+l=addon_setup(); l.execute(PACKET_HELPERS); run(l,"cmd('/im'); tick(0); tick(3); resource_data[102].Flags=0; current_profile.organization.items['102']={sell=true}; target_id=100; target_index=12; target_distance=4; callbacks.packet_out({id=0x01A,data=wire(16,{[4]=100,[8]=12})}); callbacks.packet_in({id=0x03C,data=wire(16)}); active_tab='Sell / Drop'; click='Preview sell marked items'; tick(4); assert(buttons['Confirm SELL listed items'] and #sent==0); click='Confirm SELL listed items'; tick(4.1); tick(4.4); assert(#sent==1 and sent[1].id==0x084); callbacks.packet_in({id=0x03D,data=wire(16,{[4]=10,[8]=2,[12]=1})}); assert(#sent==2 and sent[2].id==0x085); slots[0][2]=nil; counts[0]=1; callbacks.packet_in({id=0x03D,data=wire(16,{[4]=120,[8]=2,[9]=1,[12]=12})}); tick(4.8); tick(5.2); assert(shown('1/1 stacks sold confirmed') and #sent==2)")
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

@@ -143,11 +143,16 @@ On 2026-09-30 the user confirmed the progress UI looked good. Screenshots show
 1/6 and 4/6 confirmed moves, then a completed 6/6 run after Mog House reload.
 The reviewed plan included Storage Slip 22 from Satchel to Safe 2 via Inventory.
 
-## Sell markers
+## Sell and Drop markers
 
-The per-character item rule `sell=true` overrides destination and keep quantity
+The per-character item rules `sell=true` and `drop=true` override destination and keep quantity
 with Inventory gathering, after the untouched guard. It applies to all copies
 of the item ID. The original fields remain stored, and unmarking restores their
 behavior. The marker participates in rule signatures, so a reviewed plan becomes
 stale when it changes. Marking never sends transfers; the existing preview and
 confirmed runner retain access, space, identity and cancellation checks.
+
+Sell and Drop are mutually exclusive in both editors. Both retain the original
+keep/destination fields. Markers survive empty inventory and reloads. Untouched
+rules take priority during gathering and during the separate [Sell / Drop](disposal.md)
+previews. Organization itself never sells or discards items.

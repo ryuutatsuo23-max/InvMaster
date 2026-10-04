@@ -46,7 +46,7 @@ function M.normalize(value)
             result.items[tostring(n)]={name=type(rule.name)=='string' and rule.name or tostring(n),
                 keep=integer(rule.keep,0,7992) and rule.keep or nil,
                 destination=destination(rule.destination) and rule.destination or nil,
-                protected=rule.protected==true,sell=rule.sell==true};
+                protected=rule.protected==true,sell=rule.sell==true and rule.drop~=true,drop=rule.drop==true};
         end
     end
     return result;
@@ -56,7 +56,7 @@ function M.rules_signature(value)
     for _,option in ipairs(categories.options) do parts[#parts+1]=option[1]..':'..tostring(normalized.categories[option[1]]) end
     local ids={}; for id in pairs(normalized.items) do ids[#ids+1]=id end; table.sort(ids);
     for _,id in ipairs(ids) do
-        local r=normalized.items[id]; parts[#parts+1]=id..':'..tostring(r.keep)..':'..tostring(r.destination)..':'..tostring(r.protected)..':'..tostring(r.sell);
+        local r=normalized.items[id]; parts[#parts+1]=id..':'..tostring(r.keep)..':'..tostring(r.destination)..':'..tostring(r.protected)..':'..tostring(r.sell)..':'..tostring(r.drop);
     end
     return table.concat(parts,'|');
 end
@@ -83,7 +83,7 @@ function M.plan(snapshot,rules,env)
     end
     for id,rule in pairs(rules.items) do
         local n=tonumber(id);
-        if not groups[n] and rule.keep and rule.keep>0 and not rule.protected and rule.destination~=0 and not rule.sell then
+        if not groups[n] and rule.keep and rule.keep>0 and not rule.protected and rule.destination~=0 and not rule.sell and not rule.drop then
             block(rule.name,'Keep target cannot be met: item not found in readable bags.');
         end
     end
@@ -108,7 +108,7 @@ function M.plan(snapshot,rules,env)
         local rows=groups[id]; local rule=rules.items[tostring(id)] or {};
         if rule.protected then result.protected=result.protected+1
         else
-            local target=rule.sell and 0 or rule.destination;
+            local target=(rule.sell or rule.drop) and 0 or rule.destination;
             if target==nil then target=rules.categories[categories.classify(rows[1].item)] end
             if target==0 then
                 -- Inventory destination means gather every available copy, not a refill quota.
