@@ -5,11 +5,17 @@ M.bags = {[0]='Inventory',[1]='Safe',[2]='Storage',[4]='Locker',[5]='Satchel',
     [11]='Wardrobe 3',[12]='Wardrobe 4',[13]='Wardrobe 5',[14]='Wardrobe 6',
     [15]='Wardrobe 7',[16]='Wardrobe 8'};
 local portable = {[0]=true,[6]=true,[7]=true};
+function M.withdraw_locked(access,bag)
+    return access and type(access.locked_sources)=='table' and access.locked_sources[tostring(bag)]==true;
+end
 function M.route(data,choice,destination,access)
     access=access or portable;
     if not choice or not M.bags[choice.bag] or not M.bags[destination]
         or choice.bag==destination or (choice.bag~=0 and destination~=0) then
         return false, 'Move between Inventory and one storage container.';
+    end
+    if M.withdraw_locked(access,choice.bag) then
+        return false, M.bags[choice.bag]..' is locked for withdrawals in Storage.';
     end
     if access[choice.bag]~=true or access[destination]~=true then
         return false, 'Container access is unavailable. Stand near a supported storage Moogle. In a Mog House, leave and re-enter after loading the addon.';

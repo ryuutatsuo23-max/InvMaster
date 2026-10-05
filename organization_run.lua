@@ -1,10 +1,11 @@
 -- Execute only reviewed moves, using the existing confirmed route engine.
 local planner=require 'organization';
 local routes=require 'route_transfer';
+local transfer=require 'transfer';
 local stacking=require 'stack_sort';
 local M={};
 local function access_signature(access)
-    local parts={}; for id=0,16 do parts[#parts+1]=tostring(access[id]==true) end
+    local parts={}; for id=0,16 do parts[#parts+1]=tostring(access[id]==true)..'/'..tostring(transfer.withdraw_locked(access,id)==true) end
     return table.concat(parts,':');
 end
 function M.new(env)

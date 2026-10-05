@@ -156,3 +156,23 @@ Sell and Drop are mutually exclusive in both editors. Both retain the original
 keep/destination fields. Markers survive empty inventory and reloads. Untouched
 rules take priority during gathering and during the separate [Sell / Drop](disposal.md)
 previews. Organization itself never sells or discards items.
+
+
+## Storage withdrawal locks
+
+`profile.withdraw_locks` stores true values under string bag IDs (Safe 2 is `9`).
+Profile loading retains only supported storage-container IDs; Inventory and
+Temporary are excluded. The Storage tab exposes a per-bag checkbox and keeps
+locked, unavailable bags visible so their locks can still be cleared.
+
+`current_access()` attaches the map as `locked_sources`, separate from actual
+container access. `transfer.route` rejects locked sources before preparing a
+packet, including both direct and via-Inventory previews. Destinations remain
+available. Collection/CraftMaster source discovery also calls this validator,
+so it excludes locked bags and can choose eligible unlocked sources instead.
+
+Organization preview and runner access signatures include these locks. UI
+changes invalidate the preview and cancel queued manual routes, withdrawals,
+organization and preparation; sent requests retain their confirmation state.
+Exact source validation is repeated before each later transfer. No item rules
+are rewritten and no native game requests or other addons are intercepted.

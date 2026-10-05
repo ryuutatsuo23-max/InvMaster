@@ -73,6 +73,20 @@ Protection applies to organization and Sell / Drop, not your manual transfer con
 Plans clear when bag contents or applied rules change. Nothing runs automatically.
 See [organization details](docs/organization.md).
 
+## Lock storage withdrawals (v0.23.0)
+
+Open **Storage** and tick **Lock withdrawals** beside a bag, such as **Safe 2**.
+The lock saves per character and survives reloads. It prevents InvMaster from
+pulling items out through manual moves, organization (including Sell/Drop
+gathering), collection withdrawals, or CraftMaster preparation.
+
+Deposits into the bag, searching its contents, and stacking within it remain
+allowed. Untick the checkbox to allow withdrawals again. Locked bags remain
+visible in Storage even when unavailable. Inventory and Temporary are not lockable.
+Changing a lock stops queued transfers; a request already sent still needs
+confirmation. These locks affect InvMaster only, not native game controls or
+other addons.
+
 ## Sell / Drop (v0.22.0)
 
 Markers save per character and apply to future copies, even after selling or

@@ -2,7 +2,8 @@ local imgui=require 'imgui';
 local model=require 'inventory_model';
 local rules=require 'organization';
 local categories=require 'item_categories';
-local bags=require('transfer').bags;
+local transfer=require 'transfer';
+local bags=transfer.bags;
 local M={};
 local function destination(label,current,inherit)
     local value=current;
@@ -30,7 +31,7 @@ function M.new()
         self.id=id; self.name=name; self.draft={keep={rule.keep or 0},use_keep={rule.keep~=nil},protected={rule.protected==true},sell={rule.sell==true},drop={rule.drop==true},destination=rule.destination};
     end
     function self:render(snapshot,data,save,env)
-        local access={}; for id=0,16 do access[#access+1]=tostring(env.access[id]==true) end
+        local access={}; for id=0,16 do access[#access+1]=tostring(env.access[id]==true)..'/'..tostring(transfer.withdraw_locked(env.access,id)==true) end
         local access_key=table.concat(access,':');
         if self.access_key~=access_key or not env.ready then self:invalidate() end
         self.access_key=access_key;

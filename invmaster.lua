@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.22.2';
+addon.version = '0.23.0';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -108,6 +108,11 @@ local function apply_profile(data)
     profile = data; profile_name, profile_id = settings.name, settings.server_id;
     if type(data.hide_unavailable) ~= 'boolean' then data.hide_unavailable=true end
     if type(data.auto_stack) ~= 'boolean' then data.auto_stack=false end
+    local locks={};
+    for id in pairs(transfers.bags) do
+        if id~=0 and type(data.withdraw_locks)=='table' and data.withdraw_locks[tostring(id)]==true then locks[tostring(id)]=true end
+    end
+    data.withdraw_locks=locks;
     data.refresh_seconds=refresh_interval(data.refresh_seconds);
     data.categories=categories.normalize(data.categories);
     data.monitor=bag_monitor.normalize(data.monitor);
@@ -227,7 +232,9 @@ local function current_access()
         if kind=='home' and mm:GetTarget():GetMyroomCallback()~=callback then return nil end
         return evidence;
     end);
-    return bag_access:allowed(key,ok and capacity or nil,live_ok and live or nil);
+    local access=bag_access:allowed(key,ok and capacity or nil,live_ok and live or nil);
+    access.locked_sources=profile.withdraw_locks;
+    return access;
 end
 local function equipped(bag,slot)
     local inv=AshitaCore:GetMemoryManager():GetInventory();
@@ -539,18 +546,32 @@ local function render_items()
     end
 end
 local function render_storage()
+    imgui.TextWrapped('Lock withdrawals to keep items in a storage bag. Deposits and stacking within that bag remain allowed. Saved per character.');
+    imgui.TextWrapped('Changing a lock stops queued transfers; a request already sent still finishes confirmation.');
     if imgui.BeginChild('StorageBody', {0,0}) then
         local _, height=imgui.GetContentRegionAvail();
-        if imgui.BeginTable('Storage', 3, ImGuiTableFlags_ScrollY, {0,math.max(1,height)}) then
-            imgui.TableSetupColumn('Container'); imgui.TableSetupColumn('Slots'); imgui.TableSetupColumn('Free / Status');
+        if imgui.BeginTable('Storage', 4, ImGuiTableFlags_ScrollY, {0,math.max(1,height)}) then
+            imgui.TableSetupColumn('Container'); imgui.TableSetupColumn('Slots'); imgui.TableSetupColumn('Free / Status'); imgui.TableSetupColumn('Lock withdrawals');
             imgui.TableSetupScrollFreeze(0,1);
             imgui.TableHeadersRow();
             for _, bag in ipairs(snapshot or {}) do
-                if not profile.hide_unavailable or bag.state ~= 'Unavailable' then
+                if not profile.hide_unavailable or bag.state ~= 'Unavailable' or profile.withdraw_locks[tostring(bag.id)] then
                     imgui.TableNextRow(); imgui.TableNextColumn(); imgui.Text(bag.name);
                     imgui.TableNextColumn();
                     imgui.Text(bag.capacity and ('%d / %d'):format(bag.used, bag.capacity) or '--');
                     imgui.TableNextColumn(); imgui.Text(bag.free and tostring(bag.free) or bag.state);
+                    imgui.TableNextColumn();
+                    if bag.id~=0 and transfers.bags[bag.id] then
+                        local locked={profile.withdraw_locks[tostring(bag.id)]==true};
+                        if imgui.Checkbox('##LockWithdraw'..bag.id,locked) then
+                            profile.withdraw_locks[tostring(bag.id)]=locked[1] or nil;
+                            mover:cancel('Storage withdrawal locks changed.');
+                            if withdrawer.active or withdrawer.pending then withdrawer:cancel() end
+                            preparer:cancel();
+                            organizer:cancel('Stopped: storage withdrawal locks changed.');
+                            organization_view:invalidate(); choice=nil; destination=nil; settings.save();
+                        end
+                    else imgui.Text('--') end
                 end
             end
             imgui.EndTable();
