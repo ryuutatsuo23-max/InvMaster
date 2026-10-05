@@ -1338,4 +1338,22 @@ l=addon_setup(); run(l,"cmd('/im'); tick(0); tick(3); active_tab='Storage'; togg
 l=addon_setup(); run(l,"local data={withdraw_locks={['9']=true,['0']=true,['3']=true,['999']=true,['6']='true'}}; switch_profile(data); assert(data.withdraw_locks['9'] and not data.withdraw_locks['0'] and not data.withdraw_locks['3'] and not data.withdraw_locks['999'] and not data.withdraw_locks['6'])")
 l=addon_setup(); run(l,"current_profile.withdraw_locks['9']=true; cmd('/im'); tick(0); tick(3); active_tab='Storage'; assert(shown('Safe 2')); toggle_checkbox='##LockWithdraw9'; tick(4); assert(not current_profile.withdraw_locks['9'] and saves==1)")
 l=home_access_setup(); run(l,"capacity[9]=80; counts[9]=1; slots[9]={[1]={Id=102,Count=3,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}}; current_profile.withdraw_locks['9']=true; next_read=0; cmd('/im refresh'); tick(4); right_click='Copper Ore##9_1'; tick(4.1); assert(shown('Safe 2 is locked') and not buttons['Move item'] and #sent==0)")
+
+# Ordinary furniture: the display bit in extra byte 2 must be clear.
+def furniture_setup():
+    l=transfer_setup(); run(l,"resource_data[102].Type=10; resource_data[102].StackSize=1; slots[0][2].Count=1; chosen.count=1; chosen.stack_size=1; chosen.item_type=10")
+    return l
+l=furniture_setup(); run(l,"assert(mover:start(chosen,6,1) and #sent==1); moved(1); slots[0][2]=nil; counts[0]=1; now=1; mover:tick(); now=1.3; mover:tick(); assert(not mover.pending and changed==1)")
+for byte in [64,65,127,192,255]:
+    l=furniture_setup(); l.globals().placement=byte; run(l,"chosen.extra=string.char(0,placement)..string.rep(string.char(0),26); slots[0][2].Extra=chosen.extra; assert(not mover:start(chosen,6,1) and #sent==0 and mover.message:find('placed'))")
+for byte in [0,1,63,128,191]:
+    l=furniture_setup(); l.globals().placement=byte; run(l,"chosen.extra=string.char(0,placement)..string.rep(string.char(0),26); slots[0][2].Extra=chosen.extra; assert(mover:start(chosen,6,1) and #sent==1)")
+for mutation in ["slots[0][2].Flags=5; chosen.flags=5", "slots[0][2].Price=20", "slots[0][2].Extra='short'; chosen.extra='short'", "resource_data[102].Type=12", "resource_data[102].Type=14", "resource_data[102].StackSize=0", "slots[0][2].Count=2; chosen.count=2", "is_equipped=true"]:
+    l=furniture_setup(); run(l,mutation+"; assert(not mover:start(chosen,6,1) and #sent==0)")
+l=furniture_setup(); run(l,"slots[0][2].Extra=string.char(0,64)..string.rep(string.char(0),26); assert(not mover:start(chosen,6,1) and #sent==0)")
+l=furniture_setup(); run(l,"assert(mover:start(chosen,6,1)); moved(1); slots[0][2]=nil; counts[0]=1; slots[6][1].Extra=string.rep('x',28); now=1; mover:tick(); now=1.3; mover:tick(); assert(mover.pending and changed==0)")
+l=organization_run_setup(); run(l,"resource_data[102].Type=10; resource_data[102].StackSize=1; slots[7][1].Count=1; rules.items['102']={destination=6}; slots[0][2]=nil; counts[0]=1; local p=preview(); assert(#p.moves==1 and p.moves[1].via_inventory); assert(runner:start(p)); step(); deliver(); step(); step(); assert(#sent==2); deliver(); step(); step(); assert(not runner:busy() and runner.message:find('1/1 move confirmed'))")
+l=organization_setup(); run(l,"data[8].items[1].item_type=10; data[8].items[1].stack_size=1; data[8].items[1].count=1; data[8].items[1].extra=string.char(0,64)..string.rep(string.char(0),26); rules.items['102']={destination=0}; local p=org.plan(data,rules,env); assert(#p.moves==0 and p.blocked[1]:find('placed'))")
+for mode in ['sell','drop']:
+    l=disposal_setup(mode); run(l,"resource_data[102].Type=10; resource_data[102].StackSize=1; slots[0][2].Count=1; slots[0][2].Extra=string.char(0,64)..string.rep(string.char(0),26); assert(d:plan(disposal_mode) and #d.preview.rows==0 and d.preview.notices[1]:find('placed') and #sent==0)")
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

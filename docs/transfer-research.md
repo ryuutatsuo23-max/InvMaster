@@ -268,3 +268,28 @@ Safe 2 all accessible. The reviewed six-move plan included Storage Slip 22
 from Satchel to Safe 2 via Inventory. Subsequent screenshots show progress
 at 1/6 and 4/6 and a finished 6/6 result. This confirms the tested Mog House
 reload path and slip transfer; other residences and floors remain untested.
+
+
+## v0.23.1 ordinary stored furniture
+
+The original blanket furniture exclusion above is superseded for resource type
+10 only. The primary [Windower extended-data decoder](https://github.com/Windower/Lua/blob/dev/addons/libs/extdata.lua)
+defines ordinary furniture's displayed flag as bit 0x40 of extra-data byte 2
+(one-based). InvMaster independently checks this documented field within the
+existing 28-byte Ashita Extra value; no decoder implementation was copied.
+
+`transfer.furniture_allowed` accepts type 10 only with all 28 extra bytes,
+a clear displayed bit, count one and resource stack size one. Existing zero
+usage flags, zero bazaar price, equipment, exact extra-byte identity, space,
+access and withdrawal-lock checks remain mandatory. There is no inferred
+placement based on bag, item name, or zero usage flags alone. Types 12 and 14
+(flowerpots/mannequins) remain excluded because they have additional state.
+Type 11 seeds retain their existing handling. No layout packets or client-memory
+writes are introduced.
+
+The shared transfer validator covers direct, routed, organization, collection,
+and preparation paths. Disposal also calls the furniture guard so Sell/Drop
+cannot act on a displayed piece or unsupported special furniture. Offline tests
+exercise bit combinations (including high bits), malformed data, placed/locked
+items, changed extra bytes, exact confirmation and a two-leg furniture route.
+Live ordinary-furniture transfer confirmation remains pending.

@@ -2,6 +2,7 @@
 -- Protocol field reference: Windower/Lua packets/fields.lua (0x028, 0x084,
 -- 0x085, incoming 0x03C/0x03D). Implemented independently; no addon code copied.
 local rules=require 'organization';
+local transfer=require 'transfer';
 local M={};
 local outgoing_fields={[0x028]=10,[0x084]=11,[0x085]=8};
 local interrupting={[0x01A]=true,[0x05B]=true,[0x00D]=true,[0x00C]=true,[0x084]=true,[0x085]=true,
@@ -29,6 +30,8 @@ local function eligible(item,mode,env)
     if not integer(item.item_type,0,65535) or not integer(item.stack_size,0,99) then return false,'Item resource data unavailable.' end
     if item.stack_size==0 and not (item.item_type==27 and item.count==1) then return false,'Item resource data unavailable.' end
     if item.stack_size>0 and item.count>item.stack_size then return false,'Invalid stack quantity.' end
+    local furniture_ok,furniture_reason=transfer.furniture_allowed(item);
+    if not furniture_ok then return false,furniture_reason end
     if mode=='sell' then
         if not integer(item.resource_flags,0,65535) then return false,'Sale eligibility unavailable.' end
         if math.floor(item.resource_flags/4096)%2==1 then return false,'Cannot be sold to NPCs. Change its marker to Drop only if you want to discard it.' end

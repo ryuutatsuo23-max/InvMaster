@@ -73,6 +73,18 @@ Protection applies to organization and Sell / Drop, not your manual transfer con
 Plans clear when bag contents or applied rules change. Nothing runs automatically.
 See [organization details](docs/organization.md).
 
+## Stored furniture (v0.23.1)
+
+Ordinary unplaced furniture, such as beds, can use the existing manual transfer
+and reviewed organization controls. Placed furniture is skipped; remove it from
+the game's Layout menu first if you intend to move it. Withdrawal locks and
+untouched organization rules still apply.
+
+Flowerpots and mannequins remain excluded. Furniture must have complete item
+data, a clear placement flag, and a single-item count/stack size. InvMaster does
+not place or remove furnishings from Layout. Live furniture-transfer validation
+is pending; start by reviewing and moving one stored piece.
+
 ## Lock storage withdrawals (v0.23.0)
 
 Open **Storage** and tick **Lock withdrawals** beside a bag, such as **Safe 2**.

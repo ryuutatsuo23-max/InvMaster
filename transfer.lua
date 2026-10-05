@@ -8,6 +8,24 @@ local portable = {[0]=true,[6]=true,[7]=true};
 function M.withdraw_locked(access,bag)
     return access and type(access.locked_sources)=='table' and access.locked_sources[tostring(bag)]==true;
 end
+-- Placement field reference: Windower/Lua extdata.lua, ordinary Furniture.
+-- Read the documented bit independently; never alter placement or extra bytes.
+function M.furniture_allowed(item)
+    if item.item_type==12 or item.item_type==14 then
+        return false, 'Furniture with flowerpot or mannequin state is not supported yet.';
+    end
+    if item.item_type~=10 then return true end
+    if type(item.extra)~='string' or #item.extra~=28 then
+        return false, 'Furniture placement data is unavailable.';
+    end
+    if math.floor(item.extra:byte(2)/64)%2==1 then
+        return false, 'Furniture is placed in the Mog House. Remove it from Layout first.';
+    end
+    if item.count~=1 or item.stack_size~=1 then
+        return false, 'Furniture quantity or resource data is not a single item.';
+    end
+    return true;
+end
 function M.route(data,choice,destination,access)
     access=access or portable;
     if not choice or not M.bags[choice.bag] or not M.bags[destination]
@@ -90,9 +108,8 @@ function M.prepare(data, choice, destination, quantity, equipped, access)
         return nil, 'Item resource data is unavailable.';
     end
     -- Ashita ItemType 11 is Plant (seeds), not a furnishing.
-    if item.item_type==10 or item.item_type==12 or item.item_type==14 then
-        return nil, 'Furniture transfers are not supported in this version.';
-    end
+    local furniture_ok,furniture_reason=M.furniture_allowed(item);
+    if not furniture_ok then return nil,furniture_reason end
     if equipped(choice.bag,choice.slot) then return nil, 'Unequip this item before moving it.' end
     if not valid_number(quantity,1,item.count) or quantity>stack_size then return nil, 'Choose a valid quantity from this slot.' end
     -- Require a spare slot even if merging might work, until stack handling is live-tested.
