@@ -176,3 +176,5 @@ changes invalidate the preview and cancel queued manual routes, withdrawals,
 organization and preparation; sent requests retain their confirmation state.
 Exact source validation is repeated before each later transfer. No item rules
 are rewritten and no native game requests or other addons are intercepted.
+
+The user confirmed the v0.23.0 storage withdrawal locks working in game.

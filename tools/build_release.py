@@ -11,7 +11,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
     'invmaster.lua', 'inventory_model.lua', 'transfer.lua', 'route_transfer.lua',
-    'stack_sort.lua', 'bag_access.lua', 'ownership_view.lua', 'item_categories.lua',
+    'stack_sort.lua', 'bag_access.lua', 'item_categories.lua',
     'category_data.lua', 'customization.lua', 'withdraw.lua', 'prepare_bridge.lua',
     'currency.lua', 'crystal_trace.lua', 'crystal_withdraw.lua', 'shami.lua',
     'nearby_npc.lua', 'bag_monitor.lua', 'organization.lua', 'organization_view.lua', 'organization_run.lua', 'crystal_deposit_preview.lua', 'crystal_deposit.lua', 'disposal.lua', 'LICENSE',

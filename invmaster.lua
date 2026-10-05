@@ -1,6 +1,6 @@
 addon.name = 'invmaster';
 addon.author = 'DragoHorse';
-addon.version = '0.23.1';
+addon.version = '0.23.2';
 addon.desc = 'Item search, storage overview and individual transfers.';
 require 'common';
 local imgui = require 'imgui';
@@ -10,7 +10,6 @@ local bag_monitor = require 'bag_monitor';
 local categories = require 'item_categories';
 local transfers = require 'transfer';
 local bag_access = require('bag_access').new();
-local ownership_view = require('ownership_view').new();
 local customization = require('customization');
 local custom_view = customization.new();
 local organization=require 'organization';
@@ -103,7 +102,6 @@ local function refresh_interval(value)
 end
 local function apply_profile(data)
     bag_access:reset();
-    ownership_view:reset();
     custom_view:reset();
     profile = data; profile_name, profile_id = settings.name, settings.server_id;
     if type(data.hide_unavailable) ~= 'boolean' then data.hide_unavailable=true end
@@ -624,7 +622,6 @@ local function render()
             end
             if imgui.BeginTabBar('MainTabs') then
                 if imgui.BeginTabItem('Items',nil,focus_items and ImGuiTabItemFlags_SetSelected or 0) then focus_items=false; render_items(); imgui.EndTabItem(); end
-                if imgui.BeginTabItem('Ownership') then ownership_view:render(snapshot,profile.categories,settings.save); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Customization') then custom_view:render(snapshot,profile.customization,settings.save,withdraw_ui); imgui.EndTabItem(); end
                 if imgui.BeginTabItem('Organize') then
                     local key,reason=transfer_context();

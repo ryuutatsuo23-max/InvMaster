@@ -61,7 +61,6 @@ def addon_setup():
     lua.globals().deposit_preview_source=(ROOT/'crystal_deposit_preview.lua').read_text()
     lua.globals().deposit_source=(ROOT/'crystal_deposit.lua').read_text()
     lua.globals().custom_source=(ROOT/'customization.lua').read_text()
-    lua.globals().ownership_source=(ROOT/'ownership_view.lua').read_text()
     lua.globals().organization_source=(ROOT/'organization.lua').read_text()
     lua.globals().organization_view_source=(ROOT/'organization_view.lua').read_text()
     lua.globals().disposal_source=(ROOT/'disposal.lua').read_text(encoding='utf-8')
@@ -84,7 +83,6 @@ def addon_setup():
     package.preload.crystal_deposit_preview=function() return assert(loadstring(deposit_preview_source))() end
     package.preload.crystal_deposit=function() return assert(loadstring(deposit_source))() end
     package.preload.customization=function() return assert(loadstring(custom_source))() end
-    package.preload.ownership_view=function() return assert(loadstring(ownership_source))() end
     package.preload.organization=function() return assert(loadstring(organization_source))() end
     package.preload.organization_view=function() return assert(loadstring(organization_view_source))() end
     package.preload.organization_run=function() return assert(loadstring(organization_run_source))() end
@@ -345,8 +343,6 @@ for column in range(3):
     for desc in [True,False]:
         l=setup(); run(l,f"local g=model.ownership(model.scan(inv,resources),'',0); model.sort_ownership(g,{column},{str(desc).lower()}); local function val(v) if {column}==1 then return v.total elseif {column}==2 then return #v.locations else return v.name:lower() end end; assert({str(desc).lower()} and val(g[1])>=val(g[2]) or not {str(desc).lower()} and val(g[1])<=val(g[2]))")
 # UI expansion preserves individual slots, filter/search are independent, no packets.
-l=addon_setup(); run(l,"active_tab='Ownership'; resource_data[101].Flags=0x800; resource_data[101].StackSize=1; slots[1][4].Extra=string.rep('x',28); cmd('/fms'); tick(0); tick(3); assert(shown('Inventory: 1 | Safe: 1')); click='[+] Lgn. Knuckles##Owned101'; tick(4); assert(shown('Slot 1 | ID 101 | Data variant 1') and shown('Slot 4 | ID 101 | Data variant 2')); open_combo='Show##Ownership'; click='Equipment copies##OwnershipFilter'; tick(4); open_combo=nil; assert(shown('1 item types') and not shown('Copper Ore')); edit_search={label='##OwnershipSearch',value='missing'}; tick(4); assert(shown('No matches')); assert(#sent==0)")
-l=addon_setup(); run(l,"active_tab='Ownership'; cmd('/fms'); tick(0); tick(3); zoning=1; tick(4); assert(not shown('Lgn. Knuckles')); zoning=0; tick(5); tick(8); assert(shown('Lgn. Knuckles')); hide_child=true; tick(9); assert(#sent==0)")
 
 # The removed Move tab cannot be opened, and ordinary left-clicks do not open actions.
 l=addon_setup(); run(l,"cmd('/fms'); tick(0); tick(3); assert(not tab_names.Move); click='Copper Ore##0_2'; tick(4); assert(popup==nil and #sent==0); right_click='Copper Ore##0_2'; tick(4); assert(popup=='Item actions' and #sent==0)")
@@ -378,7 +374,6 @@ for item_id, expected in [(640,'materials'),(688,'materials'),(4096,'crystals'),
     run(l, "local c=require('item_categories'); assert(c.classify({id=item_id,item_type=1})==expected)")
 l=setup(); run(l, "local c=require('item_categories'); assert(c.classify({id=640,item_type=5,equip_slots=1024})=='waist'); assert(c.classify({id=65535,item_type=10})=='furniture'); assert(c.classify({item_type=5,equip_slots=0/0})=='equipment'); local f=c.normalize({fish=false,materials='bad'}); assert(f.fish==false and f.materials and f.other); assert(c.normalize(false).fish)")
 l=setup(); run(l, "resource_data[101].Type=5; resource_data[101].Slots=1024; local s=model.scan(inv,resources); assert(s[1].items[1].equip_slots==1024); local rows,n=model.search(s,'knuckles',nil,{waist=false}); assert(#rows==0 and n==0); assert(#model.ownership(s,'knuckles',0,{waist=false})==0); assert(#model.ownership(s,'knuckles',0,{waist=true})==1); assert(#model.search(s,'knuckles',1,{waist=true})==1)")
-l=addon_setup(); run(l, "resource_data[101].Type=5; resource_data[101].Slots=1024; cmd('/im'); tick(0); tick(3); open_combo='Categories##Items'; toggle_checkbox='Waist##Items'; tick(4); assert(not current_profile.categories.waist and saves==1); assert(shown('1 matching slots')); active_tab='Ownership'; tick(5); assert(not shown('Lgn. Knuckles')); open_combo='Categories##Ownership'; click='All##Ownership'; tick(6); assert(current_profile.categories.waist and saves==2 and shown('Lgn. Knuckles')); click='None##Ownership'; tick(7); assert(shown('0 item types') and saves==3); active_tab=nil; open_combo='Categories##Items'; click='All##Items'; tick(8); assert(shown('3 matching slots')); assert(#sent==0)")
 l=addon_setup(); run(l, "current_profile.categories.waist=false; switch_profile(current_profile); assert(not current_profile.categories.waist); local new={}; switch_profile(new); assert(new.categories.waist and current_profile.categories.waist==false)")
 
 # Customization: persistent item-ID membership, read-only views and UI edits.
@@ -674,7 +669,6 @@ click='Remove item rule'; tick(4.8); assert(not current_profile.organization.ite
 assert(current_profile.organization.categories.materials==6)
 """)
 
-l=addon_setup(); run(l, "cmd('/im'); tick(0); tick(3); active_tab='Ownership'; tick(4); assert(column_widths.Item==1 and column_widths['Locations / Details']==1.4 and column_widths.Total==50 and column_widths.Bags==40); assert(shown('Inventory: 1 | Safe: 1') and #sent==0)")
 l=addon_setup(); run(l, """
 cmd('/im'); tick(0); tick(3); active_tab='Organize'; content_height=600; tick(4)
 assert(child_sizes.OrganizationItems[2]==600)
@@ -1356,4 +1350,7 @@ l=organization_run_setup(); run(l,"resource_data[102].Type=10; resource_data[102
 l=organization_setup(); run(l,"data[8].items[1].item_type=10; data[8].items[1].stack_size=1; data[8].items[1].count=1; data[8].items[1].extra=string.char(0,64)..string.rep(string.char(0),26); rules.items['102']={destination=0}; local p=org.plan(data,rules,env); assert(#p.moves==0 and p.blocked[1]:find('placed'))")
 for mode in ['sell','drop']:
     l=disposal_setup(mode); run(l,"resource_data[102].Type=10; resource_data[102].StackSize=1; slots[0][2].Count=1; slots[0][2].Extra=string.char(0,64)..string.rep(string.char(0),26); assert(d:plan(disposal_mode) and #d.preview.rows==0 and d.preview.notices[1]:find('placed') and #sent==0)")
+# Ownership UI was removed; Items retains searching and category controls.
+l=addon_setup(); run(l,"cmd('/im'); tick(0); tick(3); assert(not tab_names.Ownership and tab_names.Items and shown('Copper Ore')); resource_data[101].Type=5; resource_data[101].Slots=1024; cmd('/im refresh'); tick(4); open_combo='Categories##Items'; toggle_checkbox='Waist##Items'; tick(5); assert(not current_profile.categories.waist and shown('1 matching slots')); click='All##Items'; tick(6); assert(current_profile.categories.waist and shown('3 matching slots') and #sent==0)")
+
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

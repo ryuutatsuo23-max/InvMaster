@@ -96,3 +96,5 @@ changes and uncertain-outcome locks remain in effect.
 Regression coverage includes auto-sort during sent requests, between stacks,
 and while a sale price is pending, plus changing Inventory, merged stacks,
 Stop and invalid sort packets. Live multi-stack confirmation remains pending.
+
+The user subsequently confirmed the v0.22.2 multi-item disposal fix working.

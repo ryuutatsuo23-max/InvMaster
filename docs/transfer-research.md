@@ -293,3 +293,5 @@ cannot act on a displayed piece or unsupported special furniture. Offline tests
 exercise bit combinations (including high bits), malformed data, placed/locked
 items, changed extra bytes, exact confirmation and a two-leg furniture route.
 Live ordinary-furniture transfer confirmation remains pending.
+
+The user subsequently confirmed stored furniture transfers working in game.

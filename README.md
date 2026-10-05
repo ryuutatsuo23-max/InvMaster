@@ -29,7 +29,6 @@ when the addon unloads and restored on reload. `/invmaster` and the old `/fms` a
 ## Features
 
 - **Find your items:** search by name or item ID, filter by category, and sort or resize columns.
-- **See what you own:** view total quantities, bag locations and duplicate stacks.
 - **Move and stack:** right-click an item to move a quantity or its whole stack, or choose **Stack bag**.
 - **Organise collections:** save favourites and create virtual bags such as Crafting or Fishing. These group items without moving them; right-click a collection item to withdraw it to Inventory.
 - **Check your space:** use `/im monitor` for bag usage bars and free slots. Click a bag name to open its contents.
@@ -82,8 +81,7 @@ untouched organization rules still apply.
 
 Flowerpots and mannequins remain excluded. Furniture must have complete item
 data, a clear placement flag, and a single-item count/stack size. InvMaster does
-not place or remove furnishings from Layout. Live furniture-transfer validation
-is pending; start by reviewing and moving one stored piece.
+not place or remove furnishings from Layout. Stored furniture transfers have been confirmed in game.
 
 ## Lock storage withdrawals (v0.23.0)
 
@@ -119,8 +117,7 @@ remaining items; an already-sent request still needs confirmation. An uncertain
 outcome locks further actions without retrying. Check Inventory before reloading.
 Do not manually buy, sell or rearrange items during a run.
 
-These actions have offline coverage; live sale and drop confirmation are still
-pending. See [implementation and validation details](docs/disposal.md).
+Multi-item sale and drop runs have been confirmed in game. See [implementation and validation details](docs/disposal.md).
 
 ## Crystals, seals and crests
 
