@@ -1272,7 +1272,7 @@ for failure in ["send_error=true", "send_false=true"]:
     l=disposal_setup('sell'); run(l,failure+"; begin(); quote(); assert(#sent==1 and not d:busy())")
     l=disposal_setup(); run(l,failure+"; begin(); now=10; dtick(); assert(d:busy() and #sent==1)")
     l=disposal_setup('sell'); run(l,"begin(); "+failure+"; quote(); now=10; dtick(); assert(d:busy() and #sent==2)")
-for packet in [0x05B,0x00C,0x084,0x085,0x028,0x029,0x03A,0x050,0x096]:
+for packet in [0x05B,0x00C,0x084,0x085,0x028,0x029,0x050,0x096]:
     l=disposal_setup('sell'); run(l,f"begin(); d:outgoing({{id={packet},data=wire(16)}}); quote(); assert(#sent==1 and not d:busy() and not d.shop)")
 l=disposal_setup('sell'); run(l,"d:reset(); d:incoming({id=0x03C,data=wire(16)}); assert(not d.shop); d:outgoing({id=0x01A,data=wire(16,{[4]=100,[8]=12}),blocked=true}); d:incoming({id=0x03C,data=wire(16)}); assert(not d.shop)")
 l=disposal_setup(); run(l,"slots[0][2]=nil; counts[0]=1; slots[1][4].Id=102; assert(d:plan('drop') and #d.preview.rows==0 and not d:start() and #sent==0)")
@@ -1305,4 +1305,19 @@ l=disposal_setup(); run(l,"begin(); d:outgoing({id=0x050,data=wire(8),size=8}); 
 
 l=disposal_setup(); run(l,"begin(); local data=string.char(unpack(sent[1].data)); d:outgoing({id=0x028,data=data..string.rep(string.char(0),100),size=12,injected=true}); assert(d:busy() and not d.pending.stopped)")
 l=disposal_setup('sell'); run(l,"begin(); local data=string.char(unpack(sent[1].data)); d:outgoing({id=0x084,data=data,size=8,injected=true}); quote(); assert(not d:busy() and #sent==1 and d.message:find('0x084'))")
+
+# Native Inventory auto-sort follows successful disposals; preserve the queue/shop.
+for mode in ['drop','sell']:
+    for timing in ['sent','next']:
+        l=disposal_setup(mode); run(l,"slots[0][3]={Id=102,Count=4,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3; assert(d:plan(disposal_mode) and d:start()); dtick(); "+("quote(); quote(120,2,1,12);" if mode=='sell' else "")+" slots[0][2]=nil; counts[0]=2; "+("dtick(); dtick();" if timing=='next' else "")+" d:outgoing({id=0x03A,data=wire(512),size=8}); local n=#sent; dtick(); dtick(); assert(#sent==n and d:busy()); for i=1,9 do dtick() end; assert(#sent==n+1 and not d.pending.stopped); "+("quote(10,3); quote(40,3,1,4);" if mode=='sell' else "")+" slots[0][3]=nil; counts[0]=1; d:outgoing({id=0x03A,data=wire(512),size=8}); for i=1,9 do dtick() end; assert(not d:busy() and changes==2 and d.message:find('Finished'))")
+l=disposal_setup('sell'); run(l,"begin(); d:outgoing({id=0x03A,data=wire(512),size=8}); quote(); assert(#sent==1 and d.pending.stage=='quote'); for i=1,7 do dtick() end; assert(#sent==2 and sent[2].id==0x085 and d.shop)")
+l=disposal_setup('sell'); run(l,"begin(); d:outgoing({id=0x03A,data=wire(512),size=8}); quote(); slots[0][2].Count=11; for i=1,7 do dtick() end; assert(#sent==1 and not d:busy())")
+l=disposal_setup('sell'); run(l,"begin(); d:outgoing({id=0x03A,data=wire(512),size=8}); quote(); d:cancel(); for i=1,7 do dtick() end; assert(#sent==1 and not d:busy())")
+l=disposal_setup('sell'); run(l,"begin(); d:outgoing({id=0x03A,data=wire(512),size=8}); quote(); for i=1,30 do slots[0][1].Count=i; dtick() end; assert(not d:busy() and #sent==1)")
+for data in ["wire(8,{[4]=1})", "'short'"]:
+    l=disposal_setup('sell'); run(l,"begin(); d:outgoing({id=0x03A,data="+data+"}); quote(); assert(not d:busy() and #sent==1)")
+
+l=disposal_setup(); run(l,"slots[0][3]={Id=102,Count=4,Flags=0,Price=0,Extra=string.rep(string.char(0),28)}; counts[0]=3; assert(d:plan('drop') and d:start()); dtick(); slots[0][2]=nil; counts[0]=2; dtick(); dtick(); assert(changes==1); d:outgoing({id=0x03A,data=wire(512),size=8}); slots[0][3].Count=5; for i=1,9 do dtick() end; assert(not d:busy() and #sent==1)")
+l=disposal_setup('sell'); run(l,"begin(); d:outgoing({id=0x03A,data=wire(512),size=8}); quote(); owner='Bob:200:1'; for i=1,8 do dtick() end; assert(not d:busy() and #sent==1)")
+l=disposal_setup(); run(l,"begin(); d:outgoing({id=0x03A,data=wire(512),size=8}); d:cancel(); remove_stack(); for i=1,8 do dtick() end; assert(not d:busy() and changes==1 and #sent==1 and d.message:find('Stopped'))")
 print(f'PASS: {scenarios} scenarios (LuaJIT), including search, UI, access, transfer validation, confirmation and isolation.')

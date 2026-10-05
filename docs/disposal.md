@@ -75,3 +75,24 @@ and a cancelled sale, on v0.22.0. v0.22.1 corrects outgoing packet matching and
 adds cancellation reasons. Offline regression tests simulate effective buffers,
 reserved padding, two-stack drop/sale completion and conflicting injected
 appraisals. Live multi-stack drop and merchant sale confirmation remain pending.
+
+
+## v0.22.2: native Inventory auto-sort
+
+Live v0.22.1 results identified outgoing 0x03A (size 8, event buffer 512)
+after the first successful drop and sale. These were being treated as manual
+interruptions. A valid bag-zero sort now preserves the queue and merchant
+session. It sends no additional sort requests and does not suppress the client.
+
+The runner waits at least 0.75 seconds after the latest sort request, then
+requires an unchanged readable Inventory snapshot across at least 0.5 seconds.
+Sorting has an eight-second overall bound; existing appraisal/action deadlines
+are not extended. Price replies received during sorting are held until this
+settle check completes. Every subsequent action still checks its exact reviewed
+slot, ID, quantity and metadata; relocated/merged stacks require a new preview.
+Other-bag or malformed sort requests still interrupt the run. Stop, context
+changes and uncertain-outcome locks remain in effect.
+
+Regression coverage includes auto-sort during sent requests, between stacks,
+and while a sale price is pending, plus changing Inventory, merged stacks,
+Stop and invalid sort packets. Live multi-stack confirmation remains pending.

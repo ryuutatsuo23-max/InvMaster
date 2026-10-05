@@ -110,6 +110,18 @@ function M.new(env)
             -- data_modified is the effective packet after Ashita/plugin processing.
             -- Compare the operation fields, not buffer length or reserved padding.
             local data=type(e.data_modified)=='string' and e.data_modified or e.data;
+            if e.id==0x03A and type(data)=='string' and #data>=8
+                and (e.size==nil or integer(e.size,8,#data)) and uint(data,4,1)==0 then
+                -- The client auto-stacks Inventory after a sale/drop. This does
+                -- not change the reviewed permission; wait and recheck exact slots.
+                local p=self.pending;
+                if p then
+                    p.sort_until=env.now()+0.75; p.sort_deadline=p.sort_deadline or (env.now()+8);
+                    p.sort_signature=nil; p.sort_stable=nil; p.confirmed=nil;
+                    self.message='Waiting for Inventory sorting to settle.';
+                else self.preview=nil end
+                return;
+            end
             local last_field=outgoing_fields[e.id];
             if e.injected and last_field and type(data)=='string' then
                 for i,v in ipairs(self.outbox) do
@@ -132,6 +144,14 @@ function M.new(env)
         end);
         if not ok then self:cancel('Outgoing packet could not be validated.'); self.shop=nil end
     end
+    local function approve_quote(p)
+        if env.now()>=p.deadline then self:cancel(); self.message='Sale price arrived too late. No sale confirmation sent.'; return end
+        if p.sort_until then return end
+        local bag,item=fresh(p); if not bag then self:cancel('Item, rules, character or shop changed during appraisal.'); return end
+        p.stage='sent'; p.deadline=env.now()+8; p.before=total(bag,item); p.sale_response=false; p.quote=nil;
+        self.message='Sale requested; waiting for server and Inventory confirmation.';
+        send(0x085,{0,0,0,0,1,0,0,0});
+    end
     function self:incoming(e)
         if e.blocked or e.injected then return end
         local ok=pcall(function()
@@ -150,10 +170,7 @@ function M.new(env)
             if p.stage=='quote' and kind==0 then
                 if env.now()>=p.deadline then self:cancel(); self.message='Sale price arrived too late. No sale confirmation sent.'; return end
                 if not integer(price,1,999999999) or not integer(count,1,p.rows[p.index].count) then self:cancel(); self.message='NPC did not offer a valid sale price. Nothing sold.'; return end
-                local bag,item=fresh(p); if not bag then self:cancel('Item, rules, character or shop changed during appraisal.'); return end
-                p.stage='sent'; p.deadline=env.now()+8; p.before=total(bag,item); p.sale_response=false;
-                self.message='Sale requested; waiting for server and Inventory confirmation.';
-                send(0x085,{0,0,0,0,1,0,0,0});
+                p.quote=true; approve_quote(p);
             elseif p.stage=='sent' and kind==1 and count==p.rows[p.index].count and price>0 then p.sale_response=true end
         end);
         if not ok then self:cancel(); self.message='Sale response unavailable. Check Inventory; no retry sent.' end
@@ -162,6 +179,22 @@ function M.new(env)
         local p=self.pending; if not p then return end
         local ok=pcall(function()
             local now=env.now(); if now<(p.next_at or 0) then return end; p.next_at=now+0.25;
+            if p.sort_until then
+                if now>=p.sort_deadline or env.context(p.mode)~=p.key or p.stopped then
+                    self:cancel('Inventory sorting interrupted or did not settle.');
+                    p.sort_until=nil; p.sort_deadline=nil;
+                    if self.pending~=p then return end
+                else
+                    if now<p.sort_until then return end
+                    local data=env.scan(); local bag=data and data[1];
+                    local signature=bag and bag.state=='Client snapshot' and rules.signature({bag});
+                    if not signature or signature~=p.sort_signature then
+                        p.sort_signature=signature; p.sort_stable=signature and now or nil; return;
+                    end
+                    if not p.sort_stable or now-p.sort_stable<0.5 then return end
+                    p.sort_until=nil; p.sort_deadline=nil; p.sort_signature=nil; p.sort_stable=nil;
+                end
+            end
             if p.stage=='sent' then
                 if now>=p.deadline then p.stopped=true end
                 if env.context(p.mode)~=p.key then p.stopped=true; self.message='Context changed. Outcome unknown; no further items processed.'; return end
@@ -178,7 +211,8 @@ function M.new(env)
                 return;
             end
             if p.stage=='quote' then
-                if now>=p.deadline or not fresh(p) then self:cancel(); self.message='Sale appraisal stopped or timed out. No sale confirmation sent.' end
+                if now>=p.deadline or not fresh(p) then self:cancel(); self.message='Sale appraisal stopped or timed out. No sale confirmation sent.'
+                elseif p.quote then approve_quote(p) end
                 return;
             end
             local bag,item=fresh(p); if not bag then self:cancel(); self.message='Reviewed item, rules, access or shop changed. Review a fresh list.'; return end
